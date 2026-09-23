@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "grow-it"
+version = "0.1.0"
+description = "Turn one topic, draft or article into 13 platform-native posts with Gemini, then schedule them."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "google-genai>=1.0",
+  "pydantic>=2.6",
+  "pyyaml>=6",
+  "httpx>=0.27",
+  "regex>=2024.0",
+  "trafilatura>=1.8",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+
+[project.scripts]
+grow-it = "grow_it.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["grow_it*"]
+
+[tool.setuptools.package-data]
+"grow_it.config" = ["*.yaml"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

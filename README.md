@@ -1,156 +1,119 @@
-# Multi-Platform Content & Publish Agent
+# Multi-Platform Content & Publish Agent (grow-it)
 
-An AI-powered content workflow designed to turn one idea into platform-ready content and streamline publishing across multiple social channels.
-
-## Overview
-
-Multi-Platform Content & Publish Agent helps creators, marketers, and businesses repurpose a single content brief into tailored posts for different platforms.
-
-Instead of manually rewriting the same idea for every channel, the agent can:
-
-- Generate channel-specific content from one source idea
-- Adapt tone, length, hooks, and formatting per platform
-- Create captions, hashtags, CTAs, and publishing metadata
-- Prepare content for review, scheduling, and publishing
-- Maintain a consistent brand voice across channels
-
-## Supported Content Channels
-
-The agent is intended to support workflows for platforms such as:
-
-- LinkedIn
-- Instagram
-- X (Twitter)
-- Facebook
-- Threads
-- YouTube
-- TikTok
-- WhatsApp Channels
-- Blog or CMS platforms
+An AI agent built on Google Gemini that turns one topic, draft or article into 13 platform-native posts. Each post is checked for its platform's character limits, hashtag rules and required fields, then published or scheduled through one API.
 
 ## How It Works
 
-1. **Provide a content brief**  
-   Add a topic, source content, campaign objective, target audience, and brand guidelines.
-
-2. **Generate platform-specific variations**  
-   The agent creates unique versions optimized for each selected platform.
-
-3. **Review and refine**  
-   Edit generated content, adjust tone, add media, and approve final drafts.
-
-4. **Schedule or publish**  
-   Send approved content to a publishing tool, social media API, or scheduling platform.
-
-## Example Input
-
-```text
-Topic: Launching an AI website audit service
-Audience: Small business owners and marketing agencies
-Goal: Generate leads for a free website audit
-Tone: Clear, practical, confident
-Platforms: LinkedIn, Instagram, X
-CTA: Book a free audit
+```
+topic | draft | URL | file
+        │
+        ▼
+1. Ingest           URL → readable article text (trafilatura)
+2. Brief            Gemini Pro → thesis, key points, hooks, facts, CTA
+3. Fan-out          Gemini Flash, one call per platform, in parallel,
+                    structured JSON output (Pydantic schema)
+4. Validate/repair  Deterministic checks. On failure the exact errors
+                    are fed back to Gemini (up to 3 attempts), then
+                    force-fit and flagged for human review
+5. Publish          Ayrshare API: post now or schedule (dry-run by default)
 ```
 
-## Example Output
+LLMs can't count characters reliably, so the model writes and `grow_it/validate.py` does the counting:
 
-| Platform | Content Format |
-|---|---|
-| LinkedIn | Thought-leadership post with a detailed hook, insights, and CTA |
-| Instagram | Short caption, carousel outline, hashtags, and CTA |
-| X | Concise post or thread with a strong opening and link CTA |
-| YouTube | Video title, description, tags, and short script outline |
+- X uses weighted length (URLs count 23, CJK characters and emoji count 2).
+- Bluesky counts graphemes.
+- Every other platform counts plain characters.
 
-## Core Features
+## Supported Platforms
 
-- **Content repurposing:** Convert a single idea, article, video, or brief into multiple content formats
-- **Brand voice control:** Apply custom tone, audience, messaging, and style guidelines
-- **Platform optimization:** Adjust structure, character limits, hashtags, hooks, and calls to action
-- **Content calendar support:** Prepare content for scheduled publishing
-- **Approval workflows:** Keep a human review step before publishing
-- **Publishing integrations:** Connect social accounts, automation platforms, or scheduling tools
-- **Analytics-ready workflow:** Store post metadata for performance tracking and optimization
+All rules live in [`grow_it/config/platforms.yaml`](grow_it/config/platforms.yaml). The prompt and the validator both read from this file.
 
-## Suggested Tech Stack
+| Key | Platform | Limit | Hashtags | Extra required |
+|---|---|---|---|---|
+| `x` | X (Twitter) | 280 weighted | 0–2 | |
+| `linkedin` | LinkedIn | 3,000 | 3–5 | |
+| `instagram` | Instagram | 2,200 | 3–5 | media |
+| `facebook` | Facebook | 63,206 (aim ~400) | 0–3 | |
+| `threads` | Threads | 500 | 0–1 | |
+| `bluesky` | Bluesky | 300 graphemes | 0–2 | |
+| `tiktok` | TikTok | 4,000 | 3–5 | script, media |
+| `youtube` | YouTube Shorts | 5,000 + title 100 | 3–5 | title, script, media |
+| `pinterest` | Pinterest | 500 + title 100 | 0–3 | title, media |
+| `reddit` | Reddit | 40,000 + title 300 | none | title, subreddit |
+| `telegram` | Telegram | 4,096 | 0–3 | |
+| `snapchat` | Snapchat | 160 | 0–3 | media |
+| `google_business` | Google Business Profile | 1,500 | none | cta_type |
 
-This project can be implemented using a modular AI-agent workflow:
-
-- **AI models:** OpenAI, Anthropic Claude, Gemini, or compatible LLM APIs
-- **Automation:** n8n, Make, Zapier, Gumloop, or custom workflows
-- **Database:** Supabase, PostgreSQL, Firebase, or Airtable
-- **Content scheduling:** Buffer, Hootsuite, Metricool, or direct platform APIs
-- **Frontend:** Next.js, React, Lovable, Framer, or Webflow
-- **Authentication:** Supabase Auth, Clerk, or Auth0
-- **Storage:** Supabase Storage, Cloudinary, or Google Drive
-
-## Project Structure
-
-```text
-multi-platform-content-and-publish-agent/
-├── README.md
-├── docs/
-│   ├── product-requirements.md
-│   ├── workflow-design.md
-│   └── api-integrations.md
-├── prompts/
-│   ├── linkedin.md
-│   ├── instagram.md
-│   ├── x-twitter.md
-│   └── youtube.md
-├── workflows/
-│   ├── content-generation.json
-│   ├── approval-flow.json
-│   └── publishing-flow.json
-├── src/
-│   ├── agents/
-│   ├── integrations/
-│   ├── services/
-│   └── utils/
-└── tests/
-```
+Platforms change their limits often, so check them again before relying on them.
 
 ## Setup
-
-> Setup instructions will be added once the application stack and integrations are finalized.
-
-For now, clone the repository:
 
 ```bash
 git clone https://github.com/nagadattasaikondoju-ship-it/multi-platform-content-and-publish-agent.git
 cd multi-platform-content-and-publish-agent
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+cp .env.example .env   # add GEMINI_API_KEY (and AYRSHARE_API_KEY to publish)
+export $(grep -v '^#' .env | xargs)
 ```
+
+## Usage
+
+```bash
+# All 13 platforms from a topic, a draft file, or an article URL
+grow-it generate "Why async-first teams ship faster"
+grow-it generate drafts/launch.md --voice brand/voice.md
+grow-it generate https://example.com/blog/post --platforms x,linkedin,threads
+
+# Output: runs/run-<timestamp>.json and a readable runs/run-<timestamp>.md
+
+# Preview the Ayrshare payloads (dry-run is the default)
+grow-it publish runs/run-20261001-090000.json
+
+# Actually schedule them
+grow-it publish runs/run-20261001-090000.json --schedule 2026-10-01T09:00:00+05:30 --live
+```
+
+Posts flagged `needs_review` are skipped at publish time unless you pass `--include-flagged`.
 
 ## Environment Variables
 
-When integrations are added, create a `.env` file based on `.env.example`:
-
-```env
-OPENAI_API_KEY=
-ANTHROPIC_API_KEY=
-SUPABASE_URL=
-SUPABASE_ANON_KEY=
-LINKEDIN_CLIENT_ID=
-LINKEDIN_CLIENT_SECRET=
-INSTAGRAM_ACCESS_TOKEN=
-X_API_KEY=
-X_API_SECRET=
-```
+| Variable | Needed for |
+|---|---|
+| `GEMINI_API_KEY` | generation ([get one](https://aistudio.google.com/apikey)) |
+| `GROW_IT_BRIEF_MODEL` / `GROW_IT_POST_MODEL` | optional model overrides |
+| `AYRSHARE_API_KEY` | `publish --live` |
 
 Never commit API keys, access tokens, or credentials to the repository.
 
+## Project Structure
+
+```text
+grow_it/
+├── config/platforms.yaml   # per-platform rules (single source of truth)
+├── models.py               # ContentBrief, PlatformPost, GeneratedPost
+├── specs.py                # loads platforms.yaml, renders prompt rules
+├── ingest.py               # topic / file / URL → source text
+├── llm.py                  # Gemini client behind a small protocol (fakeable)
+├── pipeline.py             # brief → parallel fan-out → validate/repair
+├── validate.py             # deterministic compliance checks + force_fit
+├── publish.py              # Ayrshare payloads, dry-run by default
+└── cli.py                  # `grow-it` command
+tests/                      # run with `pytest` (no API keys needed)
+```
+
 ## Roadmap
 
-- [ ] Define content input schema and brand-voice settings
-- [ ] Build prompts for each target platform
-- [ ] Add AI content-generation workflow
-- [ ] Add content review and approval dashboard
-- [ ] Integrate content scheduling
-- [ ] Integrate LinkedIn publishing
-- [ ] Integrate Instagram publishing
-- [ ] Integrate X publishing
-- [ ] Add analytics and performance reporting
-- [ ] Add reusable campaign templates
+- [x] Content input schema and brand-voice notes
+- [x] Rules for all 13 platforms
+- [x] Gemini generation with validate-and-repair loop
+- [x] Publishing and scheduling through Ayrshare (dry-run by default)
+- [ ] Media generation: images (Gemini image), carousels, short videos (Remotion)
+- [ ] Niche research: scrape top-performing posts to inform the brief
+- [ ] Review and approval dashboard (FastAPI + web UI or Telegram bot)
+- [ ] Posting cadence and best-time scheduling with a job queue
+- [ ] Analytics pull and PDF run report
+- [ ] Multi-user profiles (Ayrshare `Profile-Key`) and billing
 
 ## Contributing
 
