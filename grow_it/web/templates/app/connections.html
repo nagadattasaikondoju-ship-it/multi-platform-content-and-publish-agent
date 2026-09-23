@@ -41,12 +41,22 @@
   {% endif %}
 </div>
 
+<div class="panel spread">
+  <div><span class="panel-title">Storage</span>
+    <p class="muted" style="margin:4px 0 0;font-size:14px">
+      {% if storage == "postgres" %}Postgres — loops and settings are kept permanently.
+      {% elif storage == "temporary" %}Temporary — this host wipes its disk, so loops can disappear. In Vercel, open <b>Storage → Create database → Neon</b> and connect it to this project; it sets <span class="code-inline">DATABASE_URL</span>. Then redeploy.
+      {% else %}SQLite file on this machine (<span class="code-inline">data/grow_it.db</span>).{% endif %}</p></div>
+  {% if storage == "postgres" %}<span class="status s-published">permanent</span>{% elif storage == "temporary" %}<span class="status s-draft">temporary</span>{% else %}<span class="status s-approved">local</span>{% endif %}
+</div>
+
 <div class="panel">
   <span class="panel-title">Setting a key</span>
   <ol class="muted" style="margin:10px 0 0;padding-left:20px;display:grid;gap:6px;font-size:14.5px">
     <li>Get the key: Gemini from <a href="https://aistudio.google.com/apikey">AI Studio</a>, Zernio from its dashboard after connecting your social accounts.</li>
-    <li>Add it to the server's environment or to the <span class="code-inline">.env</span> file next to where you run <span class="code-inline">grow-it serve</span>.</li>
-    <li>Restart the server and refresh this page.</li>
+    <li>On Vercel: Project → Settings → Environment Variables. On your computer: the <span class="code-inline">.env</span> file next to where you run <span class="code-inline">grow-it serve</span>.</li>
+    <li>Redeploy (Vercel) or restart the server, then refresh this page.</li>
+    <li>On Vercel also set <span class="code-inline">GROW_IT_PASSWORD</span> (console sign-in) and <span class="code-inline">CRON_SECRET</span> (lets the daily autopilot run).</li>
   </ol>
 </div>
 {% endblock %}

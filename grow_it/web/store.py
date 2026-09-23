@@ -1,4 +1,8 @@
-"""SQLite persistence for runs, posts, settings and the autopilot queue."""
+"""Persistence for runs, posts, settings and the autopilot queue.
+
+SQLite locally; Postgres (e.g. Neon on Vercel) when given a postgres:// URL.
+The SQL is written once with ? placeholders and translated for Postgres.
+"""
 
 import json
 import sqlite3
@@ -29,6 +33,7 @@ CREATE TABLE IF NOT EXISTS posts (
     schedule_at TEXT,
     result TEXT,
     updated_at TEXT NOT NULL,
+    position INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (run_id, platform)
 );
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -53,25 +58,71 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def is_postgres_url(value: str) -> bool:
+    return value.startswith(("postgres://", "postgresql://"))
+
+
+class _DB:
+    """Tiny adapter so the same SQL runs on sqlite3 and psycopg."""
+
+    def __init__(self, conn, postgres: bool):
+        self.conn = conn
+        self.postgres = postgres
+
+    def _sql(self, sql: str) -> str:
+        return sql.replace("?", "%s") if self.postgres else sql
+
+    def execute(self, sql: str, params=()):
+        return self.conn.execute(self._sql(sql), params)
+
+    def executemany(self, sql: str, rows):
+        if self.postgres:
+            cur = self.conn.cursor()
+            cur.executemany(self._sql(sql), rows)
+            return cur
+        return self.conn.executemany(sql, rows)
+
+
 class Store:
-    def __init__(self, path: str | Path):
-        self.path = str(path)
-        if self.path != ":memory:":
-            Path(self.path).parent.mkdir(parents=True, exist_ok=True)
-        self._memory = sqlite3.connect(":memory:", check_same_thread=False) if self.path == ":memory:" else None
+    def __init__(self, target: str | Path):
+        self.path = str(target)
+        self.postgres = is_postgres_url(self.path)
+        self._memory = None
+        if self.postgres:
+            self.kind = "postgres"
+        else:
+            self.kind = "memory" if self.path == ":memory:" else "sqlite"
+            if self.path == ":memory:":
+                self._memory = sqlite3.connect(":memory:", check_same_thread=False)
+            else:
+                Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         with self._conn() as db:
-            db.executescript(SCHEMA)
+            if self.postgres:
+                db.conn.execute(SCHEMA)
+                db.conn.execute("ALTER TABLE posts ADD COLUMN IF NOT EXISTS position INTEGER NOT NULL DEFAULT 0")
+            else:
+                db.conn.executescript(SCHEMA)
+                try:  # databases created before the position column existed
+                    db.conn.execute("ALTER TABLE posts ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
+                except sqlite3.OperationalError:
+                    pass
 
     @contextmanager
     def _conn(self):
-        db = self._memory or sqlite3.connect(self.path, timeout=10)
-        db.row_factory = sqlite3.Row
+        if self.postgres:
+            import psycopg
+            from psycopg.rows import dict_row
+
+            conn = psycopg.connect(self.path, row_factory=dict_row, connect_timeout=10)
+        else:
+            conn = self._memory or sqlite3.connect(self.path, timeout=10)
+            conn.row_factory = sqlite3.Row
         try:
-            yield db
-            db.commit()
+            yield _DB(conn, self.postgres)
+            conn.commit()
         finally:
             if not self._memory:
-                db.close()
+                conn.close()
 
     # --- runs -------------------------------------------------------------
     def create_run(self, source: str, platforms: list[str], origin: str = "manual") -> str:
@@ -83,8 +134,8 @@ class Store:
                 (run_id, stamp, source, json.dumps(platforms), "briefing", origin),
             )
             db.executemany(
-                "INSERT INTO posts (run_id, platform, status, updated_at) VALUES (?,?,?,?)",
-                [(run_id, p, "queued", stamp) for p in platforms],
+                "INSERT INTO posts (run_id, platform, status, updated_at, position) VALUES (?,?,?,?,?)",
+                [(run_id, p, "queued", stamp, i) for i, p in enumerate(platforms)],
             )
         return run_id
 
@@ -101,7 +152,7 @@ class Store:
             if not row:
                 return None
             posts = db.execute(
-                "SELECT * FROM posts WHERE run_id = ? ORDER BY rowid", (run_id,)
+                "SELECT * FROM posts WHERE run_id = ? ORDER BY position", (run_id,)
             ).fetchall()
         return self._run_dict(row, [self._post_dict(p) for p in posts])
 
@@ -150,6 +201,31 @@ class Store:
                 f"UPDATE posts SET {sets} WHERE run_id = ? AND platform = ?",
                 (*fields.values(), run_id, platform),
             )
+
+    def claim_posts(self, run_id: str, limit: int, stale_after_seconds: int = 240) -> list[str]:
+        """Mark up to `limit` waiting posts as generating and return their platforms.
+
+        A post stuck in 'generating' longer than `stale_after_seconds` is taken
+        to belong to a request that died, and is claimed again.
+        """
+        cutoff = datetime.now(timezone.utc).timestamp() - stale_after_seconds
+        with self._conn() as db:
+            rows = db.execute(
+                "SELECT platform, status, updated_at FROM posts WHERE run_id = ? "
+                "AND status IN ('queued', 'generating') ORDER BY position",
+                (run_id,),
+            ).fetchall()
+            claimable = [
+                r["platform"] for r in rows
+                if r["status"] == "queued" or datetime.fromisoformat(r["updated_at"]).timestamp() < cutoff
+            ][:limit]
+            stamp = now()
+            for platform in claimable:
+                db.execute(
+                    "UPDATE posts SET status = 'generating', updated_at = ? WHERE run_id = ? AND platform = ?",
+                    (stamp, run_id, platform),
+                )
+        return claimable
 
     def get_post(self, run_id: str, platform: str) -> dict | None:
         with self._conn() as db:

@@ -173,3 +173,99 @@ def test_interrupted_runs_are_marked_failed_on_startup():
     assert run["status"] == "failed" and "Interrupted" in run["error"]
     statuses = {p["platform"]: p["status"] for p in run["posts"]}
     assert statuses == {"x": "failed", "bluesky": "draft"}
+
+
+# --- deployment behaviour (Vercel) ---------------------------------------
+
+def make_client(monkeypatch, **kwargs):
+    for var in ("ZERNIO_API_KEY", "AYRSHARE_API_KEY"):
+        monkeypatch.delenv(var, raising=False)
+    app = create_app(Store(":memory:"), llm_factory=FakeLLM, autopilot=False, **kwargs)
+    return TestClient(app)
+
+
+def test_serverless_run_is_driven_by_advance(monkeypatch):
+    with make_client(monkeypatch, serverless=True) as c:
+        run_id = c.post("/api/runs", json={"source": "idea", "platforms": ["x", "bluesky", "threads", "telegram"]}).json()["id"]
+        assert c.get(f"/api/runs/{run_id}").json()["status"] == "briefing"  # nothing runs by itself
+        statuses = []
+        for _ in range(6):
+            run = c.post(f"/api/runs/{run_id}/advance").json()
+            statuses.append(run["status"])
+            if run["status"] == "ready":
+                break
+        assert statuses[0] == "writing" and statuses[-1] == "ready"
+        assert all(p["status"] == "draft" for p in run["posts"])
+
+        # Rewriting one platform queues it; the next advance writes it.
+        c.post(f"/api/runs/{run_id}/posts/x/regenerate")
+        assert c.post(f"/api/runs/{run_id}/advance").json()["status"] == "ready"
+        assert next(p for p in c.get(f"/api/runs/{run_id}").json()["posts"] if p["platform"] == "x")["status"] == "draft"
+
+
+def test_password_locks_console_and_api(monkeypatch):
+    monkeypatch.setenv("GROW_IT_PASSWORD", "s3cret")
+    with make_client(monkeypatch) as c:
+        assert c.get("/").status_code == 200  # marketing stays public
+        r = c.get("/app/new?source=hi", follow_redirects=False)
+        assert r.status_code == 303 and r.headers["location"] == "/login?next=/app/new?source=hi"
+        assert c.get("/api/runs").status_code == 401
+        assert c.post("/start", data={"source": "x"}, follow_redirects=False).headers["location"].startswith("/login")
+
+        bad = c.post("/login", data={"password": "nope", "next": "/app"}, follow_redirects=False)
+        assert "error=1" in bad.headers["location"]
+        good = c.post("/login", data={"password": "s3cret", "next": "//evil.com"}, follow_redirects=False)
+        assert good.headers["location"] == "/app"
+        assert c.get("/app").status_code == 200 and c.get("/api/runs").status_code == 200
+
+
+def test_vercel_without_password_stays_locked(monkeypatch):
+    monkeypatch.setenv("VERCEL", "1")
+    monkeypatch.delenv("GROW_IT_PASSWORD", raising=False)
+    with make_client(monkeypatch) as c:
+        assert c.get("/api/runs").status_code == 401
+        page = c.get("/login")
+        assert "GROW_IT_PASSWORD" in page.text
+
+
+def test_cron_requires_secret(monkeypatch):
+    monkeypatch.delenv("CRON_SECRET", raising=False)
+    with make_client(monkeypatch, serverless=True) as c:
+        assert c.get("/api/cron/autopilot").status_code == 401
+        monkeypatch.setenv("CRON_SECRET", "abc")
+        assert c.get("/api/cron/autopilot", headers={"Authorization": "Bearer wrong"}).status_code == 401
+        assert c.get("/api/cron/autopilot", headers={"Authorization": "Bearer abc"}).json() == {"started": None}
+
+
+def test_cron_runs_a_due_autopilot_loop_to_completion(monkeypatch):
+    monkeypatch.setenv("CRON_SECRET", "abc")
+    with make_client(monkeypatch, serverless=True) as c:
+        service = c.app.state.service
+        service.save_autopilot({"enabled": True, "time": "00:00", "utc_offset_minutes": 0,
+                                "platforms": ["bluesky"]})
+        settings = service.autopilot_settings()
+        settings["last_run_at"] = "2020-01-01T00:00:00+00:00"
+        service.store.set_setting("autopilot", settings)
+        service.store.add_topic("Queued idea")
+        started = c.get("/api/cron/autopilot", headers={"Authorization": "Bearer abc"}).json()["started"]
+        run = c.get(f"/api/runs/{started}").json()
+        assert run["status"] == "ready" and run["origin"] == "autopilot"
+
+
+def test_claim_posts_reclaims_stale_work():
+    store = Store(":memory:")
+    run_id = store.create_run("idea", ["x", "bluesky"])
+    assert store.claim_posts(run_id, limit=1) == ["x"]
+    assert store.claim_posts(run_id, limit=5) == ["bluesky"]
+    assert store.claim_posts(run_id, limit=5) == []  # both in flight
+    assert store.claim_posts(run_id, limit=5, stale_after_seconds=-1) == ["x", "bluesky"]
+
+
+def test_postgres_placeholders_are_translated():
+    from grow_it.web.store import _DB
+
+    class Conn:
+        def execute(self, sql, params):
+            return sql
+
+    assert _DB(Conn(), postgres=True).execute("SELECT * FROM t WHERE a = ? AND b = ?") == "SELECT * FROM t WHERE a = %s AND b = %s"

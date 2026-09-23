@@ -5,6 +5,7 @@
   <div><p class="eyebrow">Autopilot</p><h1 class="h-lg">Set it once. The loop keeps going.</h1>
   <p>Queue ideas below. At the time you set, autopilot takes the next one and runs the whole loop.</p></div>
 </div>
+{% if serverless %}<div class="note" style="margin-bottom:22px">On Vercel, autopilot is woken by a daily cron at 03:30 UTC (09:00 IST). A slot set later than that runs at the next day's wake-up. <b>CRON_SECRET</b> must be set in the project for it to run.</div>{% endif %}
 <div class="grid" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:22px;align-items:start" id="apGrid">
   <form class="panel" id="apForm">
     <div class="spread" style="margin-bottom:18px">

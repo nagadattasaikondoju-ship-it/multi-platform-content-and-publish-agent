@@ -81,6 +81,22 @@ Loops, posts and settings are stored in SQLite at `data/grow_it.db` (override wi
 
 The design follows the makerzz.space design system: Archivo and Space Grotesk (self-hosted, SIL OFL), a teal-led palette with a warm yellow accent, pill actions and soft borders.
 
+## Deploying to Vercel
+
+The repo deploys as-is: `app.py` exposes the FastAPI app and `vercel.json` sets a 300-second function limit plus a daily autopilot cron (03:30 UTC).
+
+On Vercel nothing may keep running after a response, so the loop page drives generation in short steps (`POST /api/runs/<id>/advance`) and the cron runs a whole autopilot loop inside its own request.
+
+Set these in **Project → Settings → Environment Variables**:
+
+| Variable | Why |
+|---|---|
+| `GEMINI_API_KEY` | writing |
+| `ZERNIO_API_KEY` | publishing |
+| `GROW_IT_PASSWORD` | console sign-in. Without it a deployment keeps the console locked |
+| `CRON_SECRET` | lets Vercel Cron call `/api/cron/autopilot` |
+| `DATABASE_URL` | set automatically when you add **Storage → Neon** and connect it. Without a database, storage is temporary |
+
 ## Command line
 
 ```bash

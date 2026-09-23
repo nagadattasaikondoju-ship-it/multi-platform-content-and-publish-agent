@@ -60,6 +60,7 @@
 {% block scripts %}
 <script>
 const RUN_ID = {{ run.id|tojson }};
+const SERVERLESS = {{ serverless|tojson }};
 const PLATFORMS = Object.fromEntries({{ platforms|tojson }}.map((p) => [p.key, p]));
 const CTA_TYPES = ["LEARN_MORE", "BOOK", "ORDER", "SHOP", "SIGN_UP", "CALL"];
 const BUSY = ["queued", "generating"];
@@ -71,6 +72,7 @@ const dirty = new Set();
 let run = null;
 let pollTimer = null;
 
+let driving = false;
 async function load() {
   try {
     run = await Grow.api("GET", `/api/runs/${RUN_ID}`);
@@ -78,12 +80,34 @@ async function load() {
     Grow.toast(err.message, "error");
     return;
   }
+  render();
+}
+
+function render() {
   drawStatus();
   drawBrief();
   run.posts.forEach(drawPost);
   const working = ["briefing", "writing"].includes(run.status) || run.posts.some((p) => BUSY.includes(p.status));
   clearTimeout(pollTimer);
-  if (working) pollTimer = setTimeout(load, 2000);
+  if (!working) return;
+  if (SERVERLESS) drive();
+  else pollTimer = setTimeout(load, 2000);
+}
+
+// On serverless hosts nothing runs after a response, so this page asks the
+// server to do the next short piece of work until the loop is finished.
+async function drive() {
+  if (driving) return;
+  driving = true;
+  try {
+    run = await Grow.api("POST", `/api/runs/${RUN_ID}/advance`);
+  } catch (err) {
+    Grow.toast(err.message, "error");
+    await new Promise((r) => setTimeout(r, 3000));
+  } finally {
+    driving = false;
+  }
+  render();
 }
 
 function drawStatus() {

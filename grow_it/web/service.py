@@ -48,12 +48,18 @@ def measure_post(post: PlatformPost) -> dict:
     }
 
 
+def is_serverless() -> bool:
+    """On Vercel nothing may run after a response, so the browser drives the work."""
+    return bool(os.environ.get("VERCEL")) or os.environ.get("GROW_IT_SERVERLESS") == "1"
+
+
 class Service:
-    def __init__(self, store: Store, llm_factory: Callable[[], LLM]):
+    def __init__(self, store: Store, llm_factory: Callable[[], LLM], serverless: bool | None = None):
         self.store = store
         self._llm_factory = llm_factory
         self._llm: LLM | None = None
         self._tasks: set[asyncio.Task] = set()
+        self.serverless = is_serverless() if serverless is None else serverless
 
     @property
     def llm(self) -> LLM:
@@ -72,32 +78,70 @@ class Service:
         while self._tasks:
             await asyncio.gather(*list(self._tasks), return_exceptions=True)
 
+    def _voice(self) -> str:
+        return self.store.get_setting("voice", {}).get("compiled", "")
+
     # --- the loop ---------------------------------------------------------
     def start_run(self, source: str, platforms: list[str] | None = None, origin: str = "manual") -> str:
         specs = load_specs()
         selected = [p for p in (platforms or list(specs)) if p in specs] or list(specs)
         run_id = self.store.create_run(source.strip(), selected, origin)
-        self._spawn(self._generate(run_id))
+        if not self.serverless:
+            self._spawn(self.run_to_completion(run_id))
         return run_id
 
-    async def _generate(self, run_id: str) -> None:
+    async def run_to_completion(self, run_id: str) -> None:
+        """Brief, then every post, then finish — in one go (local server, cron)."""
+        if not await self._brief_step(run_id):
+            return
+        while True:
+            claimed = self.store.claim_posts(run_id, limit=5)
+            if not claimed:
+                break
+            await self._write_claimed(run_id, claimed)
+        await self._finish(run_id)
+
+    async def advance(self, run_id: str, max_posts: int = 3) -> dict:
+        """Do the next short piece of work for a run (browser-driven mode)."""
         run = self.store.get_run(run_id)
-        voice = self.store.get_setting("voice", {}).get("compiled", "")
+        if not run:
+            raise ValueError("Run not found")
+        if run["status"] == "briefing":
+            await self._brief_step(run_id)
+        elif run["status"] in ("writing", "ready", "failed"):
+            claimed = self.store.claim_posts(run_id, limit=max_posts)
+            if claimed:
+                if run["status"] != "writing":
+                    self.store.update_run(run_id, status="writing")
+                await self._write_claimed(run_id, claimed)
+            if not any(p["status"] in ("queued", "generating") for p in self.store.get_run(run_id)["posts"]):
+                await self._finish(run_id)
+        return self.store.get_run(run_id)
+
+    async def _brief_step(self, run_id: str) -> bool:
+        run = self.store.get_run(run_id)
         try:
             source = await asyncio.to_thread(load_source, run["source"])
-            brief = await make_brief(self.llm, source, voice=voice)
+            brief = await make_brief(self.llm, source, voice=self._voice())
         except Exception as e:
             log.exception("brief failed for %s", run_id)
             self.store.update_run(run_id, status="failed", error=_short(e))
             for p in run["platforms"]:
                 self.store.update_post(run_id, p, status="failed", errors=["The brief could not be written."])
-            return
-
+            return False
         self.store.update_run(run_id, status="writing", brief=brief.model_dump())
-        gate = asyncio.Semaphore(5)
-        await asyncio.gather(*(self._write_one(run_id, brief, p, voice, gate) for p in run["platforms"]))
+        return True
 
+    async def _write_claimed(self, run_id: str, platforms: list[str]) -> None:
+        brief = ContentBrief.model_validate(self.store.get_run(run_id)["brief"])
+        voice = self._voice()
+        gate = asyncio.Semaphore(5)
+        await asyncio.gather(*(self._write_one(run_id, brief, p, voice, gate) for p in platforms))
+
+    async def _finish(self, run_id: str) -> None:
         final = self.store.get_run(run_id)
+        if final["status"] == "ready" or not final["brief"]:
+            return
         failed = all(p["status"] == "failed" for p in final["posts"])
         self.store.update_run(run_id, status="failed" if failed else "ready")
         if final["origin"] == "autopilot" and not failed:
@@ -105,7 +149,8 @@ class Service:
 
     async def _write_one(self, run_id, brief: ContentBrief, platform: str, voice: str, gate) -> None:
         async with gate:
-            self.store.update_post(run_id, platform, status="generating")
+            if self.store.get_post(run_id, platform)["status"] != "generating":
+                self.store.update_post(run_id, platform, status="generating")
             try:
                 result = await generate_for_platform(self.llm, brief, load_specs()[platform], voice=voice)
             except Exception as e:
@@ -126,10 +171,11 @@ class Service:
         run = self.store.get_run(run_id)
         if not run or not run["brief"]:
             raise ValueError("This run has no brief yet")
-        brief = ContentBrief.model_validate(run["brief"])
-        voice = self.store.get_setting("voice", {}).get("compiled", "")
         self.store.update_post(run_id, platform, status="queued", errors=[])
-        self._spawn(self._write_one(run_id, brief, platform, voice, asyncio.Semaphore(1)))
+        if self.serverless:
+            return
+        brief = ContentBrief.model_validate(run["brief"])
+        self._spawn(self._write_one(run_id, brief, platform, self._voice(), asyncio.Semaphore(1)))
 
     # --- review -----------------------------------------------------------
     def edit_post(self, run_id: str, platform: str, changes: dict) -> dict:
@@ -192,10 +238,11 @@ class Service:
             model = PlatformPost.model_validate(post["data"])
             try:
                 if provider == "zernio":
-                    if platform not in accounts:
+                    if platform not in accounts and live:
                         raise RuntimeError("No connected Zernio account for this platform")
+                    account = accounts.get(platform, f"<{platform}-account-id>")
                     result = zernio.publish(
-                        model, accounts[platform], schedule_at=schedule_at, options=options, dry_run=not live
+                        model, account, schedule_at=schedule_at, options=options, dry_run=not live
                     )
                 else:
                     result = ayrshare_publish(model, schedule_at=schedule_at, options=options, dry_run=not live)

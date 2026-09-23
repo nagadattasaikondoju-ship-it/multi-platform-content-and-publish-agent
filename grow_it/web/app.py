@@ -1,13 +1,15 @@
 """FastAPI app: marketing pages, the console, and a JSON API behind it."""
 
 import asyncio
+import hashlib
+import hmac
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -15,8 +17,8 @@ from pydantic import BaseModel
 from ..llm import GeminiLLM
 from ..models import PlatformPost
 from ..specs import load_specs
-from .service import Service, measure_post, normalise_field, provider_name
-from .store import Store
+from .service import Service, is_serverless, measure_post, normalise_field, provider_name
+from .store import Store, is_postgres_url
 
 HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=HERE / "templates")
@@ -45,14 +47,41 @@ def platform_list() -> list[dict]:
     ]
 
 
-def create_app(store: Store | None = None, llm_factory=GeminiLLM, autopilot: bool = True) -> FastAPI:
-    store = store or Store(os.getenv("GROW_IT_DB", "data/grow_it.db"))
-    service = Service(store, llm_factory)
+def default_store() -> Store:
+    """Postgres when a database URL is configured; else SQLite (temporary on Vercel)."""
+    url = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL") or ""
+    if is_postgres_url(url):
+        return Store(url)
+    if os.getenv("VERCEL"):
+        store = Store("/tmp/grow_it.db")
+        store.kind = "temporary"
+        return store
+    return Store(os.getenv("GROW_IT_DB", "data/grow_it.db"))
+
+
+SESSION_COOKIE = "growit_session"
+PROTECTED = ("/app", "/api", "/start")
+OPEN_API = ("/api/cron/",)
+
+
+def _session_token(password: str) -> str:
+    secret = os.getenv("GROW_IT_SECRET") or password
+    return hmac.new(secret.encode(), b"grow-it-console", hashlib.sha256).hexdigest()
+
+
+def create_app(store: Store | None = None, llm_factory=GeminiLLM, autopilot: bool = True,
+               serverless: bool | None = None) -> FastAPI:
+    store = store or default_store()
+    service = Service(store, llm_factory, serverless=serverless)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        store.recover_interrupted()
-        task = asyncio.create_task(service.autopilot_forever()) if autopilot else None
+        task = None
+        if not service.serverless:
+            # In-process work only exists on a long-running server.
+            store.recover_interrupted()
+            if autopilot:
+                task = asyncio.create_task(service.autopilot_forever())
         yield
         if task:
             task.cancel()
@@ -64,7 +93,59 @@ def create_app(store: Store | None = None, llm_factory=GeminiLLM, autopilot: boo
     def page(request: Request, name: str, **context) -> HTMLResponse:
         context.setdefault("platforms", platform_list())
         context.setdefault("provider", provider_name())
+        context.setdefault("serverless", service.serverless)
+        context.setdefault("storage", store.kind)
         return templates.TemplateResponse(request, name, context)
+
+    # --- access control -----------------------------------------------------
+    def password() -> str:
+        return os.getenv("GROW_IT_PASSWORD", "")
+
+    def lock_required() -> bool:
+        # A deployed console must never be open to the internet.
+        return bool(password()) or bool(os.getenv("VERCEL"))
+
+    def signed_in(request: Request) -> bool:
+        if not lock_required():
+            return True
+        if not password():
+            return False
+        return hmac.compare_digest(request.cookies.get(SESSION_COOKIE, ""), _session_token(password()))
+
+    @app.middleware("http")
+    async def guard(request: Request, call_next):
+        path = request.url.path
+        if path.startswith(PROTECTED) and not path.startswith(OPEN_API) and not signed_in(request):
+            if path.startswith("/api"):
+                return JSONResponse({"detail": "Sign in to the console first"}, status_code=401)
+            target = path + (f"?{request.url.query}" if request.url.query else "")
+            if path == "/start":
+                target = "/app/new"
+            return RedirectResponse(f"/login?next={target}", status_code=303)
+        return await call_next(request)
+
+    @app.get("/login", response_class=HTMLResponse)
+    def login_page(request: Request, next: str = "/app", error: str = ""):
+        return page(request, "login.html", nav="", next=next if next.startswith("/") else "/app",
+                    error=error, configured=bool(password()))
+
+    @app.post("/login")
+    async def login(request: Request):
+        form = await request.form()
+        target = str(form.get("next") or "/app")
+        target = target if target.startswith("/") and not target.startswith("//") else "/app"
+        if password() and hmac.compare_digest(str(form.get("password", "")), password()):
+            response = RedirectResponse(target, status_code=303)
+            response.set_cookie(SESSION_COOKIE, _session_token(password()), httponly=True,
+                                secure=bool(os.getenv("VERCEL")), samesite="lax", max_age=60 * 60 * 24 * 30)
+            return response
+        return RedirectResponse(f"/login?next={target}&error=1", status_code=303)
+
+    @app.get("/logout")
+    def logout():
+        response = RedirectResponse("/", status_code=303)
+        response.delete_cookie(SESSION_COOKIE)
+        return response
 
     # --- marketing ----------------------------------------------------------
     @app.get("/", response_class=HTMLResponse)
@@ -210,6 +291,24 @@ def create_app(store: Store | None = None, llm_factory=GeminiLLM, autopilot: boo
             if post["data"]:
                 post["measure"] = measure_post(PlatformPost.model_validate(post["data"]))
         return run
+
+    @app.post("/api/runs/{run_id}/advance")
+    async def api_advance(run_id: str):
+        try:
+            await service.advance(run_id)
+        except ValueError as e:
+            raise HTTPException(404, str(e))
+        return api_run(run_id)
+
+    @app.get("/api/cron/autopilot")
+    async def api_cron(request: Request):
+        secret = os.getenv("CRON_SECRET", "")
+        if not secret or not hmac.compare_digest(request.headers.get("authorization", ""), f"Bearer {secret}"):
+            raise HTTPException(401, "Unauthorized")
+        run_id = service.autopilot_tick()
+        if run_id and service.serverless:
+            await service.run_to_completion(run_id)
+        return {"started": run_id}
 
     @app.delete("/api/runs/{run_id}", status_code=204)
     def api_delete_run(run_id: str):
