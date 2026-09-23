@@ -1,0 +1,321 @@
+{% extends "app/base.html" %}
+{% block page_title %}Loop{% endblock %}
+{% block main %}
+<div class="page-head">
+  <div style="min-width:0">
+    <p class="eyebrow">Loop · <time datetime="{{ run.created_at }}" data-local>{{ run.created_at }}</time>{% if run.origin == "autopilot" %} · autopilot{% endif %}</p>
+    <h1 class="h-lg run-title" style="overflow-wrap:anywhere">{{ run.source|truncate(140) }}</h1>
+  </div>
+  <div class="row">
+    <a class="btn btn-quiet btn-sm" href="/app/runs/{{ run.id }}/report">{{ icon("report", 16) }} Report</a>
+    <button class="btn btn-primary" type="button" id="openPublish">{{ icon("send", 18) }} Publish…</button>
+  </div>
+</div>
+
+<div class="run-layout">
+  <section class="posts" id="posts" aria-live="polite"></section>
+
+  <aside class="run-side">
+    <div class="panel">
+      <div class="spread" style="margin-bottom:12px"><span class="panel-title">Loop status</span><span id="runStatus"></span></div>
+      <div class="progress"><i id="progressBar" style="width:0"></i></div>
+      <p class="muted" id="progressText" style="margin:10px 0 0;font-size:13.5px"></p>
+      <div id="runError"></div>
+      <div class="row" style="margin-top:16px;gap:8px">
+        <button class="btn btn-ghost btn-sm" type="button" id="approveAll">Approve all clean</button>
+        <button class="btn btn-danger btn-sm" type="button" id="deleteRun">Delete</button>
+      </div>
+    </div>
+    <div class="panel" id="briefPanel">
+      <span class="panel-title">The brief</span>
+      <div id="brief"><div class="skeleton" style="margin-top:12px;width:90%"></div><div class="skeleton" style="margin-top:8px;width:70%"></div></div>
+    </div>
+  </aside>
+</div>
+
+<dialog class="modal" id="publishDialog">
+  <form method="dialog" id="publishForm">
+    <div class="modal-body">
+      <h2 class="h-md" style="margin-bottom:6px">Publish this loop</h2>
+      <p class="muted" style="margin:0 0 18px;font-size:14px">Through <b>{{ provider if provider != "none" else "preview only (no publishing key set)" }}</b>. Posts with open problems can't be sent.</p>
+      <div class="field-label" style="margin-bottom:8px">Posts</div>
+      <div class="chip-row" id="publishPlatforms" style="margin-bottom:18px"></div>
+      <div class="field-label" style="margin-bottom:8px">When</div>
+      <label class="radio-card"><input type="radio" name="when" value="now" checked><div><b>Now</b><span>Sent as soon as you confirm.</span></div></label>
+      <label class="radio-card"><input type="radio" name="when" value="later"><div style="flex:1"><b>Schedule</b><span>Pick a time in your timezone.</span>
+        <input class="input" type="datetime-local" name="at" style="margin-top:8px"></div></label>
+      <div class="field-label" style="margin:16px 0 8px">Mode</div>
+      <label class="radio-card"><input type="radio" name="mode" value="preview" checked><div><b>Preview</b><span>Build the exact request, send nothing.</span></div></label>
+      <label class="radio-card"><input type="radio" name="mode" value="live" {{ "disabled" if provider == "none" }}><div><b>Live</b><span>{{ "Posts to your real accounts." if provider != "none" else "Set a Zernio or Ayrshare key first." }}</span></div></label>
+      <div id="publishResult"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-quiet btn-sm" value="cancel" formnovalidate>Close</button>
+      <button class="btn btn-primary btn-sm" id="confirmPublish" value="default">Confirm</button>
+    </div>
+  </form>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const RUN_ID = {{ run.id|tojson }};
+const PLATFORMS = Object.fromEntries({{ platforms|tojson }}.map((p) => [p.key, p]));
+const CTA_TYPES = ["LEARN_MORE", "BOOK", "ORDER", "SHOP", "SIGN_UP", "CALL"];
+const BUSY = ["queued", "generating"];
+const LOCKED = ["scheduled", "published"];
+
+const postsEl = document.getElementById("posts");
+const rendered = {};   // platform -> updated_at last drawn
+const dirty = new Set();
+let run = null;
+let pollTimer = null;
+
+async function load() {
+  try {
+    run = await Grow.api("GET", `/api/runs/${RUN_ID}`);
+  } catch (err) {
+    Grow.toast(err.message, "error");
+    return;
+  }
+  drawStatus();
+  drawBrief();
+  run.posts.forEach(drawPost);
+  const working = ["briefing", "writing"].includes(run.status) || run.posts.some((p) => BUSY.includes(p.status));
+  clearTimeout(pollTimer);
+  if (working) pollTimer = setTimeout(load, 2000);
+}
+
+function drawStatus() {
+  const total = run.posts.length;
+  const written = run.posts.filter((p) => !BUSY.includes(p.status)).length;
+  document.getElementById("runStatus").innerHTML = Grow.status(run.status);
+  document.getElementById("progressBar").style.width = `${run.status === "briefing" ? 6 : (written / total) * 100}%`;
+  const approved = run.posts.filter((p) => ["approved", "previewed"].includes(p.status)).length;
+  const flagged = run.posts.filter((p) => p.errors && p.errors.length && p.data).length;
+  document.getElementById("progressText").textContent =
+    run.status === "briefing" ? "Reading your idea and writing the brief…"
+    : run.status === "writing" ? `${written} of ${total} posts written…`
+    : `${total} posts · ${approved} approved${flagged ? ` · ${flagged} need a fix` : ""}`;
+  document.getElementById("runError").innerHTML = run.error
+    ? `<div class="note error" style="margin-top:12px">${Grow.escape(run.error)}</div>` : "";
+}
+
+function drawBrief() {
+  const b = run.brief;
+  if (!b) return;
+  const list = (items) => items && items.length ? `<ul class="brief-list">${items.map((i) => `<li>${Grow.escape(i)}</li>`).join("")}</ul>` : "";
+  document.getElementById("brief").innerHTML = `
+    <p style="margin:10px 0 0;font-weight:600">${Grow.escape(b.thesis)}</p>
+    <p class="muted" style="margin:6px 0 0;font-size:13.5px">For ${Grow.escape(b.audience)}</p>
+    <details class="more" style="margin-top:12px"><summary>Key points, hooks and facts</summary>
+      <div class="label" style="margin-top:4px">Key points</div>${list(b.key_points)}
+      <div class="label" style="margin-top:12px">Hooks</div>${list(b.hooks)}
+      <div class="label" style="margin-top:12px">Facts from your source</div>${list(b.facts) || '<p class="muted" style="font-size:13.5px;margin:6px 0 0">None — so no numbers will appear in posts.</p>'}
+      <div class="label" style="margin-top:12px">Call to action</div><p style="margin:6px 0 0;font-size:14px">${Grow.escape(b.cta)}</p>
+    </details>`;
+}
+
+function field(label, name, value, opts = {}) {
+  const v = Grow.escape(value || "");
+  const input = opts.textarea
+    ? `<textarea class="input" name="${name}" rows="${opts.rows || 6}" ${opts.disabled ? "disabled" : ""}>${v}</textarea>`
+    : opts.select
+    ? `<select class="input" name="${name}" ${opts.disabled ? "disabled" : ""}>${opts.select.map((o) => `<option ${o === value ? "selected" : ""}>${o}</option>`).join("")}</select>`
+    : `<input class="input" name="${name}" value="${v}" ${opts.disabled ? "disabled" : ""} placeholder="${opts.placeholder || ""}">`;
+  return `<label class="field" style="margin:0"><span>${label}</span>${input}</label>`;
+}
+
+function meterHTML(m) {
+  if (!m) return "";
+  const pct = Math.min(100, (m.length / m.max) * 100);
+  const over = m.length > m.max;
+  const soft = !over && m.soft_max && m.length > m.soft_max;
+  return `<div class="meter ${over ? "over" : soft ? "soft" : ""}"><div class="meter-bar"><i style="width:${pct}%"></i></div>
+    <div class="meter-text"><span>${m.length.toLocaleString()} / ${m.max.toLocaleString()}</span><span>${over ? "over the limit" : soft ? `aim for ~${m.soft_max}` : "fits"}</span></div></div>`;
+}
+
+function issuesHTML(errors) {
+  return errors && errors.length ? `<ul class="issues">${errors.map((e) => `<li>${Grow.escape(e)}</li>`).join("")}</ul>` : "";
+}
+
+function drawPost(post) {
+  const key = post.platform;
+  const spec = PLATFORMS[key];
+  let card = document.getElementById(`post-${key}`);
+  if (!card) {
+    card = document.createElement("article");
+    card.id = `post-${key}`;
+    card.className = "post-card";
+    postsEl.appendChild(card);
+  }
+  if (rendered[key] === post.updated_at || dirty.has(key)) return;
+  rendered[key] = post.updated_at;
+  card.className = `post-card is-${post.status}`;
+
+  const head = `<div class="post-head">${Grow.badge(spec)}<h3>${Grow.escape(spec.label)}</h3>
+    ${post.attempts > 1 ? `<span class="mono muted">${post.attempts} TRIES</span>` : ""}${Grow.status(post.status)}</div>`;
+
+  if (BUSY.includes(post.status)) {
+    card.innerHTML = head + `<div class="post-body"><div class="skeleton" style="width:92%"></div><div class="skeleton" style="width:80%"></div><div class="skeleton" style="width:55%"></div></div>`;
+    return;
+  }
+  if (!post.data) {
+    card.innerHTML = head + `<div class="post-body">${issuesHTML(post.errors)}</div>
+      <div class="post-foot"><span></span><button class="btn btn-ghost btn-sm" data-act="rewrite">Rewrite</button></div>`;
+    bind(card, post);
+    return;
+  }
+
+  const d = post.data;
+  const locked = LOCKED.includes(post.status);
+  const tags = (d.hashtags || []).map((t) => `#${t}`).join(" ");
+  let fields = "";
+  if (spec.title_max) fields += field(`Title <small>(max ${spec.title_max})</small>`, "title", d.title, { disabled: locked });
+  fields += field("Post", "body", d.body, { textarea: true, rows: key === "facebook" || key === "reddit" || key === "linkedin" || key === "telegram" ? 9 : 5, disabled: locked });
+  if (spec.hashtags[1] > 0) fields += field(`Hashtags <small>(${spec.hashtags[0]}–${spec.hashtags[1]})</small>`, "hashtags", tags, { disabled: locked, placeholder: "#one #two" });
+  if (key === "reddit") fields += field("Subreddit", "subreddit", d.subreddit, { disabled: locked, placeholder: "without r/" });
+  if (key === "google_business") fields += field("Button", "cta_type", d.cta_type, { select: CTA_TYPES, disabled: locked });
+  if (spec.extra_required.includes("script")) fields += `<details class="more"><summary>Video script</summary>${field("", "script", d.script, { textarea: true, rows: 6, disabled: locked })}</details>`;
+  if (d.media_prompt || spec.needs_media) fields += `<details class="more"><summary>Media idea${spec.needs_media ? " · this platform needs an image or video" : ""}</summary>${field("", "media_prompt", d.media_prompt, { textarea: true, rows: 3, disabled: locked })}</details>`;
+
+  let result = "";
+  if (post.result && (post.status === "previewed" || locked || post.status === "failed")) {
+    const r = post.result;
+    result = r.error ? `<div class="note error">${Grow.escape(r.error)}</div>`
+      : `<div class="note">${post.status === "previewed" ? "Preview built — nothing was sent" : post.status === "scheduled" ? `Scheduled for ${Grow.formatDate(post.schedule_at)}` : "Published"} via ${Grow.escape(r.provider || "provider")}.
+          ${r.payload ? `<details class="more" style="margin-top:8px"><summary>See the exact request</summary><pre class="mono" style="white-space:pre-wrap;margin:0;font-size:11.5px;letter-spacing:0">${Grow.escape(JSON.stringify(r.payload, null, 2))}</pre></details>` : ""}</div>`;
+  }
+
+  const actions = locked ? "" : `
+    <button class="btn btn-primary btn-sm" data-act="save" hidden>Save</button>
+    ${["approved", "previewed"].includes(post.status)
+      ? `<button class="btn btn-quiet btn-sm" data-act="draft">Unapprove</button>`
+      : post.status === "skipped"
+      ? `<button class="btn btn-quiet btn-sm" data-act="draft">Restore</button>`
+      : `<button class="btn btn-ghost btn-sm" data-act="approve" ${post.errors.length ? "disabled" : ""}>Approve</button>
+         <button class="btn btn-quiet btn-sm" data-act="skip">Skip</button>`}
+    <button class="btn btn-quiet btn-sm" data-act="rewrite" title="Write this platform again">Rewrite</button>`;
+
+  card.innerHTML = head + `<div class="post-body">${fields}<div data-issues>${issuesHTML(post.errors)}</div>${result}</div>
+    <div class="post-foot"><div style="flex:1;min-width:180px" data-meter>${meterHTML(post.measure)}</div><div class="row" style="gap:8px">${actions}</div></div>`;
+  bind(card, post);
+}
+
+function readFields(card) {
+  const out = {};
+  card.querySelectorAll("[name]").forEach((el) => (out[el.name] = el.value));
+  return out;
+}
+
+function bind(card, post) {
+  const key = post.platform;
+  const saveBtn = card.querySelector('[data-act="save"]');
+  const approveBtn = card.querySelector('[data-act="approve"]');
+  const preview = Grow.debounce(async () => {
+    try {
+      const m = await Grow.api("POST", "/api/preview", { platform: key, post: readFields(card) });
+      card.querySelector("[data-meter]").innerHTML = meterHTML(m);
+      card.querySelector("[data-issues]").innerHTML = issuesHTML(m.errors);
+      if (approveBtn) approveBtn.disabled = m.errors.length > 0;
+    } catch (_) { /* keep the last meter */ }
+  }, 300);
+
+  card.querySelectorAll("[name]").forEach((el) =>
+    el.addEventListener("input", () => {
+      dirty.add(key);
+      if (saveBtn) saveBtn.hidden = false;
+      preview();
+    }));
+
+  card.querySelectorAll("[data-act]").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      try {
+        const act = btn.dataset.act;
+        if (act === "rewrite") {
+          await Grow.api("POST", `/api/runs/${RUN_ID}/posts/${key}/regenerate`);
+          dirty.delete(key);
+          Grow.toast(`Rewriting ${PLATFORMS[key].label}…`);
+        } else {
+          if (dirty.has(key)) {
+            await Grow.api("PATCH", `/api/runs/${RUN_ID}/posts/${key}`, readFields(card));
+            dirty.delete(key);
+          }
+          if (act !== "save") {
+            const status = { approve: "approved", skip: "skipped", draft: "draft" }[act];
+            await Grow.api("POST", `/api/runs/${RUN_ID}/posts/${key}/status`, { status });
+          } else {
+            Grow.toast("Saved");
+          }
+        }
+        rendered[key] = null;
+        await load();
+      } catch (err) {
+        Grow.toast(err.message, "error");
+        btn.disabled = false;
+      }
+    }));
+}
+
+document.getElementById("approveAll").addEventListener("click", async () => {
+  const clean = run.posts.filter((p) => p.status === "draft" && p.data && !p.errors.length && !dirty.has(p.platform));
+  if (!clean.length) return Grow.toast("Nothing clean is waiting for approval");
+  for (const p of clean) await Grow.api("POST", `/api/runs/${RUN_ID}/posts/${p.platform}/status`, { status: "approved" });
+  Grow.toast(`Approved ${clean.length} post${clean.length > 1 ? "s" : ""}`);
+  load();
+});
+
+document.getElementById("deleteRun").addEventListener("click", async () => {
+  if (!confirm("Delete this loop and all its posts? Anything already scheduled with your provider stays scheduled there.")) return;
+  await Grow.api("DELETE", `/api/runs/${RUN_ID}`);
+  location.href = "/app";
+});
+
+// --- publish dialog ---
+const dialog = document.getElementById("publishDialog");
+const pform = document.getElementById("publishForm");
+document.getElementById("openPublish").addEventListener("click", () => {
+  if (dirty.size) return Grow.toast("Save your edits first", "error");
+  const eligible = run.posts.filter((p) => p.data && !p.errors.length && !["skipped", "published", "scheduled"].includes(p.status));
+  document.getElementById("publishPlatforms").innerHTML = eligible.length
+    ? eligible.map((p) => `<label class="chip"><input type="checkbox" name="pp" value="${p.platform}" ${["approved", "previewed"].includes(p.status) ? "checked" : ""}>${Grow.badge(PLATFORMS[p.platform])}${Grow.escape(PLATFORMS[p.platform].label)}</label>`).join("")
+    : `<p class="muted" style="margin:0;font-size:14px">No posts are ready. Approve some first.</p>`;
+  document.getElementById("publishResult").innerHTML = "";
+  dialog.showModal();
+});
+
+pform.addEventListener("submit", async (e) => {
+  if (e.submitter && e.submitter.value === "cancel") return;
+  e.preventDefault();
+  const platforms = [...pform.querySelectorAll("input[name=pp]:checked")].map((c) => c.value);
+  if (!platforms.length) return Grow.toast("Pick at least one post", "error");
+  const live = pform.mode.value === "live";
+  let schedule_at = null;
+  if (pform.when.value === "later") {
+    if (!pform.at.value) return Grow.toast("Pick a time", "error");
+    const when = new Date(pform.at.value);
+    if (when < new Date()) return Grow.toast("That time is in the past", "error");
+    schedule_at = when.toISOString();
+  }
+  if (live && !confirm(`Post ${platforms.length} update${platforms.length > 1 ? "s" : ""} to your real accounts${schedule_at ? " at " + Grow.formatDate(schedule_at) : " now"}?`)) return;
+  const btn = document.getElementById("confirmPublish");
+  btn.disabled = true;
+  try {
+    const res = await Grow.api("POST", `/api/runs/${RUN_ID}/publish`, { platforms, schedule_at, live });
+    const ok = res.outcomes.filter((o) => o.ok).length;
+    document.getElementById("publishResult").innerHTML = `<div class="note ${ok === res.outcomes.length ? "" : "warn"}" style="margin-top:16px">
+      ${live ? (schedule_at ? "Scheduled" : "Published") : "Previewed"} ${ok} of ${res.outcomes.length}.
+      ${res.outcomes.filter((o) => !o.ok).map((o) => `<br>${Grow.escape(PLATFORMS[o.platform].label)}: ${Grow.escape(o.message)}`).join("")}</div>`;
+    Object.keys(rendered).forEach((k) => (rendered[k] = null));
+    load();
+  } catch (err) {
+    document.getElementById("publishResult").innerHTML = `<div class="note error" style="margin-top:16px">${Grow.escape(err.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+load();
+</script>
+{% endblock %}

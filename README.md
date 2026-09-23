@@ -1,4 +1,6 @@
-# Multi-Platform Content & Publish Agent (grow-it)
+# Grow it — Multi-Platform Content & Publish Agent
+
+**One idea. One loop. Thirteen platforms.**
 
 An AI agent built on Google Gemini that turns one topic, draft or article into 13 platform-native posts. Each post is checked for its platform's character limits, hashtag rules and required fields, then published or scheduled through one API (Zernio or Ayrshare).
 
@@ -56,7 +58,30 @@ pip install -e ".[dev]"
 cp .env.example .env   # add GEMINI_API_KEY (and ZERNIO_API_KEY to publish)
 ```
 
-## Usage
+## Website and console
+
+```bash
+grow-it serve            # http://127.0.0.1:8000
+```
+
+The site has four public pages (Home, How it works, Platforms, Pricing) and a console:
+
+| Page | What it does |
+|---|---|
+| `/app` — Loops | Every loop you have run and where each post stands |
+| `/app/new` — New loop | Paste a topic, draft or link; pick platforms; start the loop |
+| `/app/runs/<id>` | Posts arrive live; edit with a live character meter, approve, skip, rewrite one platform, then publish now, schedule, or preview |
+| `/app/runs/<id>/report` | What it read, the brief it chose, what it made, what it sent — printable as a PDF |
+| `/app/autopilot` | Idea queue plus a schedule (every N days at a time). Review mode waits for you; publish mode sends posts that pass every check |
+| `/app/calendar` | Scheduled and published posts by month |
+| `/app/voice` | Brand, audience and voice notes added to every brief |
+| `/app/connections` | Which keys are set and which Zernio accounts are connected |
+
+Loops, posts and settings are stored in SQLite at `data/grow_it.db` (override with `GROW_IT_DB`). Background work runs in the server process; if it restarts mid-loop, the loop is marked interrupted and single posts can be rewritten.
+
+The design follows the makerzz.space design system: Archivo and Space Grotesk (self-hosted, SIL OFL), a teal-led palette with a warm yellow accent, pill actions and soft borders.
+
+## Command line
 
 ```bash
 # All 13 platforms from a topic, a draft file, or an article URL
@@ -107,7 +132,13 @@ grow_it/
 ├── validate.py             # deterministic compliance checks + force_fit
 ├── publish.py              # Ayrshare payloads, dry-run by default
 ├── zernio.py               # Zernio accounts + payloads, dry-run by default
-└── cli.py                  # `grow-it` command
+├── cli.py                  # `grow-it` command (generate, publish, accounts, serve)
+└── web/
+    ├── app.py              # FastAPI routes: pages + JSON API
+    ├── service.py          # run the loop, edit, publish, autopilot
+    ├── store.py            # SQLite persistence
+    ├── templates/          # Jinja pages (site + console)
+    └── static/             # CSS design system, JS, fonts
 tests/                      # run with `pytest` (no API keys needed)
 ```
 
@@ -119,9 +150,11 @@ tests/                      # run with `pytest` (no API keys needed)
 - [x] Publishing and scheduling through Zernio or Ayrshare (dry-run by default)
 - [ ] Media generation: images (Gemini image), carousels, short videos (Remotion)
 - [ ] Niche research: scrape top-performing posts to inform the brief
-- [ ] Review and approval dashboard (FastAPI + web UI or Telegram bot)
-- [ ] Posting cadence and best-time scheduling with a job queue
-- [ ] Analytics pull and PDF run report
+- [x] Website and review console (FastAPI + Jinja)
+- [x] Autopilot: idea queue on a schedule, review or publish mode
+- [x] Printable run report
+- [ ] Best-time scheduling per platform
+- [ ] Analytics pulled back into each report
 - [ ] Multi-user profiles and billing
 
 ## Contributing

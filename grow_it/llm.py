@@ -37,10 +37,18 @@ class LLM(Protocol):
     ) -> T: ...
 
 
+MAX_WAIT = 60.0
+
+
 def retry_delay(error: Exception, attempt: int) -> float:
-    """Honour the server's suggested delay when it gives one, else back off exponentially."""
+    """Honour a short server-suggested delay, else back off exponentially.
+
+    A long suggested delay means the model's quota is spent for a while, so
+    we wait only briefly and let the caller rotate to a fallback model.
+    """
     if match := RETRY_DELAY_RE.search(str(error)):
-        return float(match.group(1)) + 1
+        hinted = float(match.group(1)) + 1
+        return hinted if hinted <= MAX_WAIT else 1.0
     return min(2**attempt, 30) + random.random()
 
 
@@ -78,6 +86,7 @@ class GeminiLLM:
                 temperature=temperature,
                 response_mime_type="application/json",
                 response_schema=schema,
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
             ),
         )
         if response.parsed is None:

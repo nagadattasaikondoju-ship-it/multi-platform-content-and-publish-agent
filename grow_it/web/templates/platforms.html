@@ -1,0 +1,33 @@
+{% extends "site.html" %}
+{% block title %}Platforms · Grow it{% endblock %}
+{% block main %}
+<section class="page-hero">
+  <div class="wrap">
+    <p class="eyebrow">Platforms</p>
+    <h1 class="display" style="max-width:16ch">Thirteen platforms. <span class="accent">Thirteen rulebooks.</span></h1>
+    <p class="lede">Each platform gets its own limits, tone and required fields. These are the exact rules the writer is given and the checker enforces.</p>
+  </div>
+</section>
+<section class="section" style="padding-top:48px">
+  <div class="wrap">
+    <div class="grid grid-2">
+      {% for p in platforms %}
+      <article class="card">
+        <div class="row" style="gap:14px;margin-bottom:16px">{{ pbadge(p, "lg") }}<div><h2 class="h-sm" style="margin:0">{{ p.label }}</h2><span class="mono muted">{{ p.key|upper }}</span></div></div>
+        <div class="row" style="gap:8px;margin-bottom:14px">
+          <span class="chip chip-static">{{ "{:,}".format(p.max_chars) }} {{ "graphemes" if p.count_mode == "graphemes" else ("weighted" if p.count_mode == "x_weighted" else "chars") }}</span>
+          <span class="chip chip-static">{% if p.hashtags[1] == 0 %}no hashtags{% else %}{{ p.hashtags[0] }}–{{ p.hashtags[1] }} hashtags{% endif %}</span>
+          {% if p.title_max %}<span class="chip chip-static">title ≤ {{ p.title_max }}</span>{% endif %}
+          {% if p.needs_media %}<span class="chip chip-static" style="background:var(--warn-weak)">needs media</span>{% endif %}
+          {% for f in p.extra_required %}<span class="chip chip-static">{{ f }}</span>{% endfor %}
+        </div>
+        <p><b style="color:var(--on-surface)">Tone.</b> {{ p.tone }}</p>
+        <p style="margin-top:8px"><b style="color:var(--on-surface)">Format.</b> {{ p.format }}</p>
+        {% if p.banned_phrases %}<p style="margin-top:8px"><b style="color:var(--on-surface)">Never says.</b> {{ p.banned_phrases|join(", ") }}</p>{% endif %}
+      </article>
+      {% endfor %}
+    </div>
+    <p class="muted" style="margin-top:28px">Platforms change their limits often; these values are re-checked before each release.</p>
+  </div>
+</section>
+{% endblock %}

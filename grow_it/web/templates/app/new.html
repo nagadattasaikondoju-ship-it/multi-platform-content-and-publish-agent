@@ -1,0 +1,63 @@
+{% extends "app/base.html" %}
+{% block page_title %}New loop{% endblock %}
+{% block main %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">New loop</p>
+    <h1 class="h-lg">What should the loop write about?</h1>
+    <p>A topic, a rough draft, a full article, or a link. The more you give it, the more specific the posts.</p>
+  </div>
+</div>
+<form id="newForm" class="grid" style="grid-template-columns:minmax(0,1fr) 320px;gap:24px;align-items:start">
+  <div class="panel">
+    <label class="field"><span>Your idea</span>
+      <textarea class="input" name="source" id="source" rows="9" required placeholder="e.g. We just launched same-day delivery in Hyderabad — here's why it took us two years…">{{ source }}</textarea>
+      <small>Links are fetched and read. Numbers in your posts only come from what you paste here.</small>
+    </label>
+    <div class="field-label" style="margin-bottom:8px">Try one</div>
+    <div class="chip-row">
+      {% for idea in ["Five lessons from our first 100 customers", "Why we stopped posting every day — and grew faster", "A beginner's guide to cold brew at home"] %}
+      <button type="button" class="chip" data-idea="{{ idea }}" style="padding:6px 12px">{{ idea }}</button>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="panel">
+    <div class="spread" style="margin-bottom:12px">
+      <span class="panel-title">Platforms</span>
+      <span class="row" style="gap:10px"><button type="button" class="btn-link" data-all="1">All</button><button type="button" class="btn-link" data-all="0">None</button></span>
+    </div>
+    <div class="chip-row" style="margin-bottom:20px">
+      {% for p in platforms %}
+      <label class="chip"><input type="checkbox" name="platforms" value="{{ p.key }}" checked>{{ pbadge(p) }}{{ p.label }}</label>
+      {% endfor %}
+    </div>
+    <div class="note" style="margin-bottom:18px;font-size:13.5px">
+      {% if voice.compiled %}Writing in your brand voice{% if voice.brand %} for <b>{{ voice.brand }}</b>{% endif %}. <a href="/app/voice">Edit</a>{% else %}No brand voice yet — posts will use a neutral tone. <a href="/app/voice">Add one</a>{% endif %}
+    </div>
+    <button class="btn btn-primary" style="width:100%" type="submit" id="startBtn">Start the loop {{ icon("arrow", 18) }}</button>
+  </div>
+</form>
+{% endblock %}
+{% block scripts %}
+<script>
+  const form = document.getElementById("newForm");
+  document.querySelectorAll("[data-idea]").forEach((b) =>
+    b.addEventListener("click", () => { form.source.value = b.dataset.idea; form.source.focus(); }));
+  document.querySelectorAll("[data-all]").forEach((b) =>
+    b.addEventListener("click", () => form.querySelectorAll("input[name=platforms]").forEach((c) => (c.checked = b.dataset.all === "1"))));
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const platforms = [...form.querySelectorAll("input[name=platforms]:checked")].map((c) => c.value);
+    if (!platforms.length) return Grow.toast("Pick at least one platform", "error");
+    const btn = document.getElementById("startBtn");
+    btn.disabled = true;
+    try {
+      const run = await Grow.api("POST", "/api/runs", { source: form.source.value, platforms });
+      location.href = run.url;
+    } catch (err) {
+      Grow.toast(err.message, "error");
+      btn.disabled = false;
+    }
+  });
+</script>
+{% endblock %}

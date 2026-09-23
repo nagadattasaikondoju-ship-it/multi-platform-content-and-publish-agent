@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block body_class %}app-body{% endblock %}
+{% block title %}{% block page_title %}Console{% endblock %} · Grow it{% endblock %}
+{% block body %}
+<header class="app-header">
+  <div class="wrap">
+    {{ logo(sub=false, href="/app") }}
+    <nav class="app-tabs" aria-label="Console">
+      <a href="/app" class="{{ 'active' if tab == 'dashboard' }}">Loops</a>
+      <a href="/app/new" class="{{ 'active' if tab == 'new' }}">New loop</a>
+      <a href="/app/autopilot" class="{{ 'active' if tab == 'autopilot' }}">Autopilot</a>
+      <a href="/app/calendar" class="{{ 'active' if tab == 'calendar' }}">Calendar</a>
+      <a href="/app/voice" class="{{ 'active' if tab == 'voice' }}">Brand voice</a>
+      <a href="/app/connections" class="{{ 'active' if tab == 'connections' }}">Connections</a>
+    </nav>
+    <a class="btn btn-quiet btn-sm" href="/">Site</a>
+  </div>
+</header>
+<main class="app-main"><div class="wrap">{% block main %}{% endblock %}</div></main>
+{% endblock %}

@@ -112,6 +112,16 @@ def cmd_accounts(args) -> int:
     return 0
 
 
+def cmd_serve(args) -> int:
+    import uvicorn
+
+    from .web.app import create_app
+
+    print(f"Grow it is running at http://{args.host}:{args.port}")
+    uvicorn.run(create_app(), host=args.host, port=args.port, log_level="warning")
+    return 0
+
+
 def load_dotenv(path: str = ".env") -> None:
     """Read KEY=VALUE lines from .env without overriding the real environment."""
     env = Path(path)
@@ -148,6 +158,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     pub.add_argument("--live", action="store_true", help="Actually post (default is dry-run)")
     pub.set_defaults(func=cmd_publish)
+
+    serve = sub.add_parser("serve", help="Run the Grow it website and console")
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8000)
+    serve.set_defaults(func=cmd_serve)
 
     sub.add_parser("accounts", help="List social accounts connected in Zernio").set_defaults(
         func=cmd_accounts

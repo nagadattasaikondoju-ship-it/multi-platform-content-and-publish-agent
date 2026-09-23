@@ -1,0 +1,32 @@
+{% extends "app/base.html" %}
+{% block page_title %}Brand voice{% endblock %}
+{% block main %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Brand voice</p>
+    <h1 class="h-lg">How should you sound?</h1>
+    <p>Added to every brief, so all thirteen posts share one voice. Keep it short and concrete.</p>
+  </div>
+</div>
+<form id="voiceForm" class="panel" style="max-width:760px">
+  <label class="field"><span>Brand or name</span><input class="input" name="brand" value="{{ voice.brand or '' }}" placeholder="e.g. Grow it"></label>
+  <label class="field"><span>Who you are talking to</span><input class="input" name="audience" value="{{ voice.audience or '' }}" placeholder="e.g. Founders of small service businesses in India"></label>
+  <label class="field"><span>Voice notes</span>
+    <textarea class="input" name="notes" rows="8" placeholder="Tone: warm, direct, a little dry.&#10;Always: short sentences, one idea per post.&#10;Never: 'game-changer', 'unlock', exclamation marks.&#10;Example we like: 'We shipped it on a Tuesday. Nobody noticed. That was the point.'">{{ voice.notes or '' }}</textarea>
+    <small>Tone, words to use or avoid, and one or two example lines you like.</small>
+  </label>
+  <div class="row end"><button class="btn btn-primary" type="submit">Save voice</button></div>
+</form>
+{% endblock %}
+{% block scripts %}
+<script>
+  const vf = document.getElementById("voiceForm");
+  vf.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      await Grow.api("PUT", "/api/voice", { brand: vf.brand.value, audience: vf.audience.value, notes: vf.notes.value });
+      Grow.toast("Voice saved — new loops will use it");
+    } catch (err) { Grow.toast(err.message, "error"); }
+  });
+</script>
+{% endblock %}

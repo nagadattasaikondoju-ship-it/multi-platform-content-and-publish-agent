@@ -1,0 +1,52 @@
+{% extends "app/base.html" %}
+{% block page_title %}Connections{% endblock %}
+{% block main %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Connections</p>
+    <h1 class="h-lg">What the loop is plugged into</h1>
+    <p>Keys live in the server's environment, never in the browser. This page only shows whether each one is set.</p>
+  </div>
+</div>
+<div class="grid grid-3" style="margin-bottom:22px">
+  {% for key, name, role, var in [("gemini", "Gemini", "Writes the brief and every post", "GEMINI_API_KEY"), ("zernio", "Zernio", "Publishes to your connected accounts", "ZERNIO_API_KEY"), ("ayrshare", "Ayrshare", "Alternative publisher", "AYRSHARE_API_KEY")] %}
+  <div class="panel">
+    <div class="spread" style="margin-bottom:8px"><span class="panel-title">{{ name }}</span>
+      {% if info[key] %}<span class="status s-published">connected</span>{% else %}<span class="status s-skipped">not set</span>{% endif %}</div>
+    <p class="muted" style="margin:0 0 10px;font-size:14px">{{ role }}</p>
+    <span class="code-inline">{{ var }}</span>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="panel">
+  <div class="spread" style="margin-bottom:6px">
+    <span class="panel-title">Accounts in Zernio</span>
+    <span class="muted" style="font-size:13.5px">Publishing through: <b>{{ info.provider if info.provider != "none" else "preview only" }}</b></span>
+  </div>
+  {% if not info.zernio %}
+    <p class="muted" style="margin:6px 0 0">Set <span class="code-inline">ZERNIO_API_KEY</span> to see and post to your connected accounts. Until then, publishing shows a preview of exactly what would be sent.</p>
+  {% elif info.accounts_error %}
+    <div class="note error" style="margin-top:10px">Could not reach Zernio: {{ info.accounts_error }}. Check that the server can reach <b>zernio.com</b> and that the key is current.</div>
+  {% elif not info.accounts %}
+    <div class="note warn" style="margin-top:10px">Zernio answered, but no accounts are connected. Connect them in the Zernio dashboard, then refresh this page.</div>
+  {% else %}
+    <div class="grid grid-3" style="margin-top:14px">
+      {% for a in info.accounts %}
+        {% set ours = {"twitter": "x", "googlebusiness": "google_business"}.get(a.platform, a.platform) %}
+        {% set p = platforms|selectattr("key", "equalto", ours)|first %}
+        <div class="ptile">{% if p %}{{ pbadge(p, "lg") }}{% endif %}<div><strong>{{ p.label if p else a.platform }}</strong><span class="muted">{{ a.name or "connected" }}{% if not a.active %} · inactive{% endif %}</span></div></div>
+      {% endfor %}
+    </div>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <span class="panel-title">Setting a key</span>
+  <ol class="muted" style="margin:10px 0 0;padding-left:20px;display:grid;gap:6px;font-size:14.5px">
+    <li>Get the key: Gemini from <a href="https://aistudio.google.com/apikey">AI Studio</a>, Zernio from its dashboard after connecting your social accounts.</li>
+    <li>Add it to the server's environment or to the <span class="code-inline">.env</span> file next to where you run <span class="code-inline">grow-it serve</span>.</li>
+    <li>Restart the server and refresh this page.</li>
+  </ol>
+</div>
+{% endblock %}

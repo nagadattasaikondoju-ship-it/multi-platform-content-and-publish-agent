@@ -1,0 +1,54 @@
+{% extends "app/base.html" %}
+{% block page_title %}Report{% endblock %}
+{% block main %}
+<div class="page-head no-print">
+  <div><p class="eyebrow">Loop report</p><h1 class="h-lg">What it read, chose, made and sent</h1></div>
+  <div class="row"><a class="btn btn-quiet btn-sm" href="/app/runs/{{ run.id }}">Back to loop</a><button class="btn btn-primary btn-sm" onclick="window.print()">Save as PDF</button></div>
+</div>
+<article class="report">
+  <div class="spread">{{ logo() }}<span class="mono muted">LOOP {{ run.id|upper }}</span></div>
+  <h1 class="h-md" style="margin-top:28px">Loop report</h1>
+  <p class="muted" style="margin:0">Started <time datetime="{{ run.created_at }}" data-local>{{ run.created_at }}</time> · {{ run.origin }} · status {{ run.status }}</p>
+
+  <h2>1. What it read</h2>
+  <pre>{{ run.source|truncate(1500) }}</pre>
+
+  <h2>2. What it chose</h2>
+  {% if run.brief %}
+    <p><b>Thesis.</b> {{ run.brief.thesis }}</p>
+    <p><b>Audience.</b> {{ run.brief.audience }}</p>
+    <p><b>Key points.</b></p><ul>{% for k in run.brief.key_points %}<li>{{ k }}</li>{% endfor %}</ul>
+    <p><b>Facts taken from the source.</b> {% if run.brief.facts %}</p><ul>{% for f in run.brief.facts %}<li>{{ f }}</li>{% endfor %}</ul>{% else %}None found, so no figures were used.</p>{% endif %}
+    <p><b>Call to action.</b> {{ run.brief.cta }}</p>
+  {% else %}
+    <p class="muted">No brief was written{% if run.error %}: {{ run.error }}{% endif %}.</p>
+  {% endif %}
+
+  <h2>3. What it made</h2>
+  <div class="table-wrap" style="margin-bottom:12px"><table class="data">
+    <thead><tr><th>Platform</th><th>Length</th><th>Tries</th><th>Checks</th><th>Status</th></tr></thead>
+    <tbody>{% for p in run.posts %}<tr>
+      <td>{{ p.label }}</td>
+      <td class="mono">{% if p.measure %}{{ p.measure.length }} / {{ p.measure.max }}{% else %}—{% endif %}</td>
+      <td class="mono">{{ p.attempts or "—" }}</td>
+      <td>{% if p.errors %}<span class="status s-failed">{{ p.errors|length }} open</span>{% elif p.data %}<span class="status s-published">passed</span>{% else %}—{% endif %}</td>
+      <td>{{ status(p.status) }}</td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+  {% for p in run.posts if p.data %}
+  <div class="post-block">
+    <b>{{ p.label }}</b>{% if p.data.title %} — {{ p.data.title }}{% endif %}
+    <pre>{{ p.data.body }}{% if p.data.hashtags %}
+
+{% for t in p.data.hashtags %}#{{ t }} {% endfor %}{% endif %}</pre>
+    {% if p.errors %}<ul class="issues" style="margin-top:8px">{% for e in p.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+  </div>
+  {% endfor %}
+
+  <h2>4. What it sent</h2>
+  {% set sent = run.posts|selectattr("result")|list %}
+  {% if sent %}<ul>{% for p in sent %}<li>{{ p.label }} — {{ p.status }}{% if p.schedule_at %} · <time datetime="{{ p.schedule_at }}" data-local>{{ p.schedule_at }}</time>{% endif %}{% if p.result.error %} · {{ p.result.error }}{% elif p.result.provider %} · via {{ p.result.provider }}{% endif %}</li>{% endfor %}</ul>
+  {% else %}<p class="muted">Nothing has been published or scheduled from this loop yet.</p>{% endif %}
+  <p class="mono muted" style="margin-top:36px">NO FIGURE IN THIS REPORT WAS ESTIMATED. DATA THAT WAS NOT AVAILABLE IS SHOWN AS “—”.</p>
+</article>
+{% endblock %}

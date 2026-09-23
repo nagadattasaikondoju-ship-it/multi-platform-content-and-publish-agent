@@ -1,0 +1,83 @@
+{% extends "site.html" %}
+{% block title %}How it works · Grow it{% endblock %}
+{% block main %}
+<section class="page-hero">
+  <div class="wrap">
+    <p class="eyebrow">How it works</p>
+    <h1 class="display" style="max-width:15ch">The whole loop, <span class="accent">stage by stage.</span></h1>
+    <p class="lede">Six stages turn one idea into thirteen checked posts. Nothing here is a black box — each stage leaves a record you can read in the loop's report.</p>
+  </div>
+</section>
+
+<section class="section" style="padding-top:56px">
+  <div class="wrap">
+    <div class="pipeline">
+      <div class="stage"><div class="stage-n">01</div><div>
+        <h3>Ingest</h3>
+        <p>You paste a topic, a draft or a link. Links are fetched and stripped down to their readable article text, so the loop works from what the page actually says.</p></div></div>
+      <div class="stage"><div class="stage-n">02</div><div>
+        <h3>Brief</h3>
+        <p>Gemini distils the source into one platform-neutral brief: a one-sentence thesis, the audience, 3–7 key points, a handful of hooks, a call to action, and a list of facts copied from the source. Your brand voice is added here.</p></div></div>
+      <div class="stage"><div class="stage-n">03</div><div>
+        <h3>Fan-out</h3>
+        <p>Thirteen writers run in parallel — one per platform — each handed that platform's rules: its hard character limit, its hashtag range, its tone, its format, and any required field such as a YouTube title or a subreddit.</p></div></div>
+      <div class="stage"><div class="stage-n">04</div><div>
+        <h3>Check and repair</h3>
+        <p>Code, not the model, decides whether a post fits. X is measured with its weighted count (links are 23, emoji and CJK are 2), Bluesky by graphemes, everything else by characters. Hashtags, titles, required fields and banned phrases are checked too. A failed draft goes back to the model with the exact errors, up to three times; after that it is trimmed to fit and flagged for you.</p></div></div>
+      <div class="stage"><div class="stage-n">05</div><div>
+        <h3>Review</h3>
+        <p>Every post lands in the console as a draft with a live character meter. Edit any field and it is re-checked as you type. Approve, skip, or ask for a fresh rewrite of a single platform.</p></div></div>
+      <div class="stage"><div class="stage-n">06</div><div>
+        <h3>Publish</h3>
+        <p>Approved posts go to your publishing provider — <span class="code-inline">Zernio</span> by default, <span class="code-inline">Ayrshare</span> as an alternative — to the account connected for each platform. Post now or pick a time. Until you choose live, publishing is only a preview of exactly what would be sent.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<section class="section alt">
+  <div class="wrap grid grid-2" style="align-items:center;gap:48px">
+    <div>
+      <p class="eyebrow">Then it goes around again</p>
+      <h2 class="h-lg">Autopilot is the loop, <span class="accent">on a timer.</span></h2>
+      <p class="lede">Queue up ideas once. At the time you choose — every day, every few days — autopilot takes the next idea and runs all six stages.</p>
+      <ul class="plan" style="list-style:none;padding:0;margin:24px 0 0;display:grid;gap:10px">
+        <li style="display:flex;gap:10px"><b>Review mode</b>&nbsp;— drafts wait in the console for your approval.</li>
+        <li style="display:flex;gap:10px"><b>Publish mode</b>&nbsp;— posts that pass every check go out on their own; flagged ones wait.</li>
+      </ul>
+      <p style="margin-top:28px"><a class="btn btn-primary" href="/app/autopilot">Set up autopilot</a></p>
+    </div>
+    <div class="card" style="padding:32px">
+      <div class="row" style="gap:12px;margin-bottom:18px"><div class="step-icon" style="margin:0">{{ icon("loop") }}</div><div><b class="h-sm" style="margin:0">Daily at 09:00</b><div class="mono muted">NEXT IDEA FROM THE QUEUE</div></div></div>
+      {% for step in ["Take the next idea", "Write the brief", "Write thirteen posts", "Check every limit", "Wait for you — or publish"] %}
+      <div class="row" style="padding:12px 0;border-top:1px solid var(--border)"><span class="mono muted">0{{ loop.index }}</span><span style="font-weight:600">{{ step }}</span></div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">Being honest about scope</p>
+      <h2 class="h-lg">What the loop does today, <span class="accent">and what is next.</span></h2>
+    </div>
+    <div class="grid grid-2">
+      <div class="card">
+        <h3 class="h-sm">Working today</h3>
+        <ul class="plan" style="margin-top:12px"><li>Topic, draft or link in</li><li>Brief with source-only facts and brand voice</li><li>Thirteen posts with enforced limits and repair</li><li>Edit, approve, skip, rewrite one platform</li><li>Preview, publish now or schedule via Zernio or Ayrshare</li><li>Autopilot queue with review or publish mode</li><li>Printable report for every loop</li></ul>
+      </div>
+      <div class="card">
+        <h3 class="h-sm">On the roadmap</h3>
+        <ul class="plan" style="margin-top:12px"><li>Rendered images and carousels for Instagram and Pinterest</li><li>Short vertical videos for TikTok, Shorts and Snapchat</li><li>Niche scan: learn from what already works for similar accounts</li><li>Best-time scheduling per platform</li><li>Post analytics pulled back into each report</li></ul>
+        <p class="muted" style="margin-top:14px">Instagram, TikTok, YouTube, Pinterest and Snapchat need media to publish. Until rendering ships, attach media yourself in your provider or post those five manually.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section tight" style="padding-top:0"><div class="wrap"><div class="cta-band">
+  <h2 class="h-lg">See it run on your own idea.</h2>
+  <p class="lede">One paste. Thirteen checked posts.</p>
+  <a class="btn btn-secondary btn-lg" href="/app/new">Start a loop</a>
+</div></div></section>
+{% endblock %}
