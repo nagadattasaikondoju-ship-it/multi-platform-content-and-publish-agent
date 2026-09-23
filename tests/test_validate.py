@@ -63,3 +63,10 @@ def test_force_fit_always_fits(key):
     fitted = force_fit(post, spec)
     assert measure(fitted.published_text(), spec.count_mode) <= spec.max_chars
     assert len(fitted.hashtags) <= spec.hashtags[1]
+
+
+def test_google_business_cta_type_must_be_allowed():
+    post = PlatformPost(platform="google_business", body="Open late on Fridays.", cta_type="link")
+    assert any("cta_type must be one of" in e for e in check(post, SPECS["google_business"]))
+    post.cta_type = "LEARN_MORE"
+    assert check(post, SPECS["google_business"]) == []

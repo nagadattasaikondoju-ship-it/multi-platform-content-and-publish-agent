@@ -9,7 +9,7 @@ topic | draft | URL | file
         │
         ▼
 1. Ingest           URL → readable article text (trafilatura)
-2. Brief            Gemini Pro → thesis, key points, hooks, facts, CTA
+2. Brief            Gemini Flash → thesis, key points, hooks, facts, CTA
 3. Fan-out          Gemini Flash, one call per platform, in parallel,
                     structured JSON output (Pydantic schema)
 4. Validate/repair  Deterministic checks. On failure the exact errors
@@ -78,10 +78,13 @@ Posts flagged `needs_review` are skipped at publish time unless you pass `--incl
 
 ## Environment Variables
 
+The CLI reads a `.env` file in the current directory automatically (it never overrides variables already set).
+
 | Variable | Needed for |
 |---|---|
 | `GEMINI_API_KEY` | generation ([get one](https://aistudio.google.com/apikey)) |
-| `GROW_IT_BRIEF_MODEL` / `GROW_IT_POST_MODEL` | optional model overrides |
+| `GROW_IT_BRIEF_MODEL` / `GROW_IT_POST_MODEL` | optional model overrides (default `gemini-flash-latest`; Pro models have no free-tier quota) |
+| `GROW_IT_FALLBACK_MODELS` | comma-separated models tried when the main one is overloaded or rate-limited |
 | `AYRSHARE_API_KEY` | `publish --live` |
 
 Never commit API keys, access tokens, or credentials to the repository.

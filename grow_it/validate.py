@@ -70,6 +70,9 @@ def check(post: PlatformPost, spec: PlatformSpec) -> list[str]:
         if not (getattr(post, field, None) or "").strip():
             errors.append(f"The field '{field}' is required for {spec.label}.")
 
+    if spec.allowed_cta_types and post.cta_type and post.cta_type not in spec.allowed_cta_types:
+        errors.append(f"cta_type must be one of {spec.allowed_cta_types} (got '{post.cta_type}').")
+
     lowered = post.body.lower()
     for phrase in spec.banned_phrases:
         if phrase.lower() in lowered:

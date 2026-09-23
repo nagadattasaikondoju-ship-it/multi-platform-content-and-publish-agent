@@ -131,3 +131,4 @@ google_business:
     SHOP, LEARN_MORE, SIGN_UP, CALL
   needs_media: false
   extra_required: [cta_type]
+  allowed_cta_types: [BOOK, ORDER, SHOP, LEARN_MORE, SIGN_UP, CALL]

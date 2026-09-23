@@ -18,6 +18,7 @@ class PlatformSpec(BaseModel):
     needs_media: bool = False
     extra_required: list[str] = []
     banned_phrases: list[str] = []
+    allowed_cta_types: list[str] = []
 
     def prompt_block(self) -> str:
         lo, hi = self.hashtags

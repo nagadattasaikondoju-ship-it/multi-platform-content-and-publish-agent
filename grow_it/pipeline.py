@@ -2,7 +2,7 @@
 
 import asyncio
 
-from .llm import DEFAULT_BRIEF_MODEL, DEFAULT_POST_MODEL, LLM
+from .llm import LLM, brief_model, post_model
 from .models import ContentBrief, GeneratedPost, PlatformPost
 from .specs import PlatformSpec, load_specs
 from .validate import check, force_fit
@@ -27,7 +27,7 @@ async def make_brief(llm: LLM, source: str, *, voice: str = "") -> ContentBrief:
         prompt=prompt,
         system=BRIEF_SYSTEM,
         schema=ContentBrief,
-        model=DEFAULT_BRIEF_MODEL,
+        model=brief_model(),
         temperature=0.3,
     )
 
@@ -53,7 +53,7 @@ async def generate_for_platform(
             prompt=_post_prompt(brief, spec, voice, feedback),
             system=POST_SYSTEM,
             schema=PlatformPost,
-            model=DEFAULT_POST_MODEL,
+            model=post_model(),
             temperature=0.8 if attempt == 1 else 0.4,
         )
         post.platform = spec.key

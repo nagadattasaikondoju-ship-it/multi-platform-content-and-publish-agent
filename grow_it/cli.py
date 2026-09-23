@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import json
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -73,7 +74,19 @@ def cmd_publish(args) -> int:
     return 0
 
 
+def load_dotenv(path: str = ".env") -> None:
+    """Read KEY=VALUE lines from .env without overriding the real environment."""
+    env = Path(path)
+    if not env.is_file():
+        return
+    for line in env.read_text().splitlines():
+        key, sep, value = line.strip().partition("=")
+        if sep and key and not key.startswith("#"):
+            os.environ.setdefault(key.strip(), value.strip().strip("'\""))
+
+
 def main(argv: list[str] | None = None) -> int:
+    load_dotenv()
     parser = argparse.ArgumentParser(prog="grow-it")
     sub = parser.add_subparsers(dest="command", required=True)
 

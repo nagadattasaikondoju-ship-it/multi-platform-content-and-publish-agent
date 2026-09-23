@@ -31,3 +31,18 @@ def test_publish_defaults_to_dry_run(monkeypatch):
     result = publish(PlatformPost(platform="x", body="hi", hashtags=["ai"]))
     assert result["status"] == "dry_run"
     assert result["payload"]["post"] == "hi\n\n#ai"
+
+
+def test_load_dotenv_does_not_override(tmp_path, monkeypatch):
+    from grow_it.cli import load_dotenv
+
+    env = tmp_path / ".env"
+    env.write_text("# comment\nGROW_IT_A='from-file'\nGROW_IT_B=from-file\n")
+    monkeypatch.delenv("GROW_IT_A", raising=False)
+    monkeypatch.setenv("GROW_IT_B", "from-env")
+    load_dotenv(str(env))
+    import os
+
+    assert os.environ["GROW_IT_A"] == "from-file"
+    assert os.environ["GROW_IT_B"] == "from-env"
+    monkeypatch.delenv("GROW_IT_A")
