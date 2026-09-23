@@ -10,7 +10,11 @@
       <a href="/pricing" class="{{ 'active' if nav == 'pricing' }}">Pricing</a>
     </nav>
     <div class="header-actions">
-      <a class="btn btn-ghost btn-sm" href="/app">Open console</a>
+      {% if user %}
+        <a class="btn btn-ghost btn-sm" href="/app">Open console</a>
+      {% else %}
+        <a class="btn btn-ghost btn-sm" href="/login">Sign in</a>
+      {% endif %}
       <a class="btn btn-primary btn-sm" href="/app/new">Start a loop</a>
       <button class="btn btn-quiet btn-sm menu-toggle" type="button" aria-label="Menu" data-menu>{{ icon("menu") }}</button>
     </div>
@@ -33,7 +37,7 @@
         <li><a href="/app/new">Start a loop</a></li>
         <li><a href="/app/autopilot">Autopilot</a></li>
         <li><a href="/app/calendar">Calendar</a></li>
-        <li><a href="/app/connections">Connections</a></li>
+        <li><a href="/app/connections">Accounts</a></li>
       </ul></div>
       <div><h4>Project</h4><ul>
         <li><a href="https://github.com/nagadattasaikondoju-ship-it/multi-platform-content-and-publish-agent">Source on GitHub</a></li>

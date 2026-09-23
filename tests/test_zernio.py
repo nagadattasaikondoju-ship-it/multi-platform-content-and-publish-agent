@@ -71,3 +71,27 @@ def test_publish_defaults_to_dry_run(monkeypatch):
     result = zernio.publish(PlatformPost(platform="bluesky", body="hi"), "b1")
     assert result["status"] == "dry_run"
     assert result["provider"] == "zernio"
+
+
+def test_connect_url_waits_for_a_new_profile(monkeypatch):
+    calls = []
+
+    def fake_request(method, path, **kwargs):
+        calls.append(path)
+        if len(calls) < 3:
+            raise zernio.ZernioError("This API key does not have access to this profile", 403)
+        return {"authUrl": "https://www.facebook.com/dialog"}
+
+    monkeypatch.setattr(zernio, "_request", fake_request)
+    monkeypatch.setattr(zernio.time, "sleep", lambda s: None)
+    assert zernio.connect_url("facebook", "p1", "https://x/cb") == "https://www.facebook.com/dialog"
+    assert calls == ["/v1/connect/facebook"] * 3
+
+
+def test_connect_url_surfaces_other_errors(monkeypatch):
+    def fake_request(method, path, **kwargs):
+        raise zernio.ZernioError("X (Twitter) requires a payment method", 402)
+
+    monkeypatch.setattr(zernio, "_request", fake_request)
+    with pytest.raises(zernio.ZernioError, match="payment method"):
+        zernio.connect_url("x", "p1", "https://x/cb")

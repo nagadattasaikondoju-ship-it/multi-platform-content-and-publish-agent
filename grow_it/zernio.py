@@ -6,6 +6,7 @@ Every call that would post defaults to dry-run.
 """
 
 import os
+import time
 from datetime import datetime, timezone
 
 import httpx
@@ -42,10 +43,98 @@ def _headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {api_key}"}
 
 
-def list_accounts() -> list[dict]:
-    response = httpx.get(f"{base_url()}/v1/accounts", headers=_headers(), timeout=30)
-    response.raise_for_status()
-    return response.json()["accounts"]
+class ZernioError(RuntimeError):
+    """A Zernio API error with the human-readable message Zernio sent back."""
+
+    def __init__(self, message: str, status: int = 0, code: str = ""):
+        super().__init__(message)
+        self.status = status
+        self.code = code
+
+
+def _request(method: str, path: str, **kwargs) -> dict:
+    # Reads are safe to repeat, so a dropped connection gets one more try.
+    attempts = 2 if method in ("GET", "PATCH") else 1
+    for attempt in range(attempts):
+        try:
+            response = httpx.request(method, f"{base_url()}{path}", headers=_headers(), timeout=30, **kwargs)
+            break
+        except httpx.TransportError:
+            if attempt == attempts - 1:
+                raise
+    if response.status_code >= 400:
+        try:
+            body = response.json()
+        except ValueError:
+            body = {}
+        message = body.get("error") or body.get("message") or response.text[:200] or response.reason_phrase
+        raise ZernioError(str(message), response.status_code, str(body.get("code", "")))
+    return response.json() if response.content else {}
+
+
+def list_accounts(profile_id: str | None = None) -> list[dict]:
+    params = {"profileId": profile_id} if profile_id else None
+    return _request("GET", "/v1/accounts", params=params)["accounts"]
+
+
+# --- multi-user: one Zernio profile per Grow it user ----------------------
+
+def create_profile(name: str, description: str = "") -> str:
+    """Create a profile and return its id; an existing profile with the name is reused."""
+    try:
+        body = _request("POST", "/v1/profiles", json={"name": name, "description": description})
+        return body["profile"]["_id"]
+    except ZernioError as e:
+        if e.status != 409:
+            raise
+    profiles = _request("GET", "/v1/profiles", params={"name": name})["profiles"]
+    if not profiles:
+        raise ZernioError(f"Profile {name} exists but could not be found", 409)
+    return profiles[0]["_id"]
+
+
+def connect_url(platform: str, profile_id: str, redirect_url: str) -> str:
+    """The URL that sends a user to the platform's own sign-in, then back to redirect_url."""
+    # A brand-new profile can take a moment to be visible to every platform's
+    # connect endpoint, which answers 403 until then.
+    for attempt in range(4):
+        try:
+            body = _request(
+                "GET",
+                f"/v1/connect/{ZERNIO_PLATFORM[platform]}",
+                params={"profileId": profile_id, "redirect_url": redirect_url},
+            )
+            return body["authUrl"]
+        except ZernioError as e:
+            if e.status != 403 or "access to this profile" not in str(e) or attempt == 3:
+                raise
+            time.sleep(1.5)
+    raise AssertionError("unreachable")
+
+
+def current_zernio_user_id() -> str:
+    return _request("GET", "/v1/users")["currentUserId"]
+
+
+def connect_bluesky(profile_id: str, identifier: str, app_password: str) -> dict:
+    """Bluesky signs in with an app password instead of OAuth."""
+    state = f"{current_zernio_user_id()}-{profile_id}"
+    body = _request("POST", "/v1/connect/bluesky/credentials",
+                    json={"identifier": identifier, "appPassword": app_password, "state": state})
+    return body.get("account", {})
+
+
+def telegram_code(profile_id: str) -> dict:
+    """An access code the user sends to Zernio's Telegram bot to link a channel or group."""
+    return _request("GET", "/v1/connect/telegram", params={"profileId": profile_id})
+
+
+def telegram_status(code: str) -> dict:
+    return _request("PATCH", "/v1/connect/telegram", params={"code": code})
+
+
+def disconnect_account(account_id: str) -> None:
+    _request("DELETE", f"/v1/accounts/{account_id}")
 
 
 def account_map(accounts: list[dict]) -> dict[str, str]:
@@ -120,6 +209,4 @@ def publish(
     payload = build_payload(post, account_id, media_urls=media_urls, schedule_at=schedule_at, options=options)
     if dry_run:
         return {"status": "dry_run", "provider": "zernio", "payload": payload}
-    response = httpx.post(f"{base_url()}/v1/posts", json=payload, headers=_headers(), timeout=60)
-    response.raise_for_status()
-    return response.json()
+    return _request("POST", "/v1/posts", json=payload)

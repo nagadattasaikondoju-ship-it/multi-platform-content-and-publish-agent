@@ -37,16 +37,17 @@
   <form method="dialog" id="publishForm">
     <div class="modal-body">
       <h2 class="h-md" style="margin-bottom:6px">Publish this loop</h2>
-      <p class="muted" style="margin:0 0 18px;font-size:14px">Through <b>{{ provider if provider != "none" else "preview only (no publishing key set)" }}</b>. Posts with open problems can't be sent.</p>
+      <p class="muted" style="margin:0 0 18px;font-size:14px">{{ "Posts go to the accounts you connected on the Accounts page." if provider != "none" else "Publishing isn't switched on for this site yet — you can still preview." }} Posts with open problems can't be sent.</p>
       <div class="field-label" style="margin-bottom:8px">Posts</div>
-      <div class="chip-row" id="publishPlatforms" style="margin-bottom:18px"></div>
+      <div class="chip-row" id="publishPlatforms" style="margin-bottom:10px"></div>
+      <p class="muted" id="connectHint" style="margin:0 0 18px;font-size:13px" hidden>Faded platforms aren't connected yet — <a href="/app/connections">connect them here</a>. Previews still work.</p>
       <div class="field-label" style="margin-bottom:8px">When</div>
       <label class="radio-card"><input type="radio" name="when" value="now" checked><div><b>Now</b><span>Sent as soon as you confirm.</span></div></label>
       <label class="radio-card"><input type="radio" name="when" value="later"><div style="flex:1"><b>Schedule</b><span>Pick a time in your timezone.</span>
         <input class="input" type="datetime-local" name="at" style="margin-top:8px"></div></label>
       <div class="field-label" style="margin:16px 0 8px">Mode</div>
       <label class="radio-card"><input type="radio" name="mode" value="preview" checked><div><b>Preview</b><span>Build the exact request, send nothing.</span></div></label>
-      <label class="radio-card"><input type="radio" name="mode" value="live" {{ "disabled" if provider == "none" }}><div><b>Live</b><span>{{ "Posts to your real accounts." if provider != "none" else "Set a Zernio or Ayrshare key first." }}</span></div></label>
+      <label class="radio-card"><input type="radio" name="mode" value="live" {{ "disabled" if provider == "none" }}><div><b>Live</b><span>{{ "Posts to your real accounts." if provider != "none" else "Not available yet." }}</span></div></label>
       <div id="publishResult"></div>
     </div>
     <div class="modal-foot">
@@ -61,6 +62,7 @@
 <script>
 const RUN_ID = {{ run.id|tojson }};
 const SERVERLESS = {{ serverless|tojson }};
+const PROVIDER = {{ provider|tojson }};
 const PLATFORMS = Object.fromEntries({{ platforms|tojson }}.map((p) => [p.key, p]));
 const CTA_TYPES = ["LEARN_MORE", "BOOK", "ORDER", "SHOP", "SIGN_UP", "CALL"];
 const BUSY = ["queued", "generating"];
@@ -302,11 +304,23 @@ const pform = document.getElementById("publishForm");
 document.getElementById("openPublish").addEventListener("click", () => {
   if (dirty.size) return Grow.toast("Save your edits first", "error");
   const eligible = run.posts.filter((p) => p.data && !p.errors.length && !["skipped", "published", "scheduled"].includes(p.status));
-  document.getElementById("publishPlatforms").innerHTML = eligible.length
-    ? eligible.map((p) => `<label class="chip"><input type="checkbox" name="pp" value="${p.platform}" ${["approved", "previewed"].includes(p.status) ? "checked" : ""}>${Grow.badge(PLATFORMS[p.platform])}${Grow.escape(PLATFORMS[p.platform].label)}</label>`).join("")
-    : `<p class="muted" style="margin:0;font-size:14px">No posts are ready. Approve some first.</p>`;
+  const renderChips = (connected) => {
+    document.getElementById("publishPlatforms").innerHTML = eligible.length
+      ? eligible.map((p) => {
+          const off = connected && !connected.has(p.platform);
+          return `<label class="chip${off ? " not-connected" : ""}" title="${off ? "Not connected yet" : ""}"><input type="checkbox" name="pp" value="${p.platform}" ${["approved", "previewed"].includes(p.status) && !off ? "checked" : ""}>${Grow.badge(PLATFORMS[p.platform])}${Grow.escape(PLATFORMS[p.platform].label)}${off ? " ·&nbsp;not connected" : ""}</label>`;
+        }).join("")
+      : `<p class="muted" style="margin:0;font-size:14px">No posts are ready. Approve some first.</p>`;
+    document.getElementById("connectHint").hidden = !(connected && eligible.some((p) => !connected.has(p.platform)));
+  };
+  renderChips(null);
   document.getElementById("publishResult").innerHTML = "";
   dialog.showModal();
+  if (PROVIDER === "zernio") {
+    Grow.api("GET", "/api/connections").then((c) => {
+      if (!c.accounts_error) renderChips(new Set(c.accounts.map((a) => a.platform)));
+    }).catch(() => {});
+  }
 });
 
 pform.addEventListener("submit", async (e) => {

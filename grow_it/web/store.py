@@ -37,6 +37,15 @@ CREATE TABLE IF NOT EXISTS posts (
     PRIMARY KEY (run_id, platform)
 );
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    email TEXT,
+    name TEXT,
+    picture TEXT,
+    google_sub TEXT UNIQUE,
+    zernio_profile_id TEXT
+);
 CREATE TABLE IF NOT EXISTS topics (
     id TEXT PRIMARY KEY,
     created_at TEXT NOT NULL,
@@ -45,6 +54,12 @@ CREATE TABLE IF NOT EXISTS topics (
     run_id TEXT
 );
 """
+
+MIGRATIONS = (
+    ("posts", "position", "INTEGER NOT NULL DEFAULT 0"),
+    ("runs", "user_id", "TEXT"),
+    ("topics", "user_id", "TEXT"),
+)
 
 # Post lifecycle: queued -> generating -> draft -> approved -> previewed | scheduled | published
 # with skipped and failed as side exits.
@@ -99,11 +114,19 @@ class Store:
         with self._conn() as db:
             if self.postgres:
                 db.conn.execute(SCHEMA)
-                db.conn.execute("ALTER TABLE posts ADD COLUMN IF NOT EXISTS position INTEGER NOT NULL DEFAULT 0")
             else:
                 db.conn.executescript(SCHEMA)
-                try:  # databases created before the position column existed
-                    db.conn.execute("ALTER TABLE posts ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
+        # Columns added after the first release; adding them is a no-op once present.
+        for table, column, ddl in MIGRATIONS:
+            self._add_column(table, column, ddl)
+
+    def _add_column(self, table: str, column: str, ddl: str) -> None:
+        with self._conn() as db:
+            if self.postgres:
+                db.conn.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {ddl}")
+            else:
+                try:
+                    db.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
                 except sqlite3.OperationalError:
                     pass
 
@@ -125,13 +148,15 @@ class Store:
                 conn.close()
 
     # --- runs -------------------------------------------------------------
-    def create_run(self, source: str, platforms: list[str], origin: str = "manual") -> str:
+    def create_run(self, source: str, platforms: list[str], origin: str = "manual",
+                   user_id: str | None = None) -> str:
         run_id = uuid.uuid4().hex[:10]
         stamp = now()
         with self._conn() as db:
             db.execute(
-                "INSERT INTO runs (id, created_at, source, platforms, status, origin) VALUES (?,?,?,?,?,?)",
-                (run_id, stamp, source, json.dumps(platforms), "briefing", origin),
+                "INSERT INTO runs (id, created_at, source, platforms, status, origin, user_id) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (run_id, stamp, source, json.dumps(platforms), "briefing", origin, user_id),
             )
             db.executemany(
                 "INSERT INTO posts (run_id, platform, status, updated_at, position) VALUES (?,?,?,?,?)",
@@ -156,11 +181,15 @@ class Store:
             ).fetchall()
         return self._run_dict(row, [self._post_dict(p) for p in posts])
 
-    def list_runs(self, limit: int = 50) -> list[dict]:
+    def list_runs(self, user_id: str, limit: int = 50) -> list[dict]:
         with self._conn() as db:
-            rows = db.execute("SELECT * FROM runs ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
+            rows = db.execute(
+                "SELECT * FROM runs WHERE user_id = ? ORDER BY created_at DESC LIMIT ?", (user_id, limit)
+            ).fetchall()
             counts = db.execute(
-                "SELECT run_id, status, COUNT(*) AS n FROM posts GROUP BY run_id, status"
+                "SELECT posts.run_id, posts.status, COUNT(*) AS n FROM posts JOIN runs ON runs.id = posts.run_id "
+                "WHERE runs.user_id = ? GROUP BY posts.run_id, posts.status",
+                (user_id,),
             ).fetchall()
         tally: dict[str, dict[str, int]] = {}
         for c in counts:
@@ -234,12 +263,21 @@ class Store:
             ).fetchone()
         return self._post_dict(row) if row else None
 
-    def scheduled_posts(self) -> list[dict]:
+    def count_runs_since(self, user_id: str, since_iso: str) -> int:
+        with self._conn() as db:
+            row = db.execute(
+                "SELECT COUNT(*) AS n FROM runs WHERE user_id = ? AND created_at >= ?", (user_id, since_iso)
+            ).fetchone()
+        return int(row["n"])
+
+    def scheduled_posts(self, user_id: str) -> list[dict]:
         with self._conn() as db:
             rows = db.execute(
                 "SELECT posts.*, runs.source FROM posts JOIN runs ON runs.id = posts.run_id "
-                "WHERE posts.schedule_at IS NOT NULL OR posts.status IN ('published','scheduled') "
-                "ORDER BY COALESCE(posts.schedule_at, posts.updated_at)"
+                "WHERE runs.user_id = ? AND "
+                "(posts.schedule_at IS NOT NULL OR posts.status IN ('published','scheduled')) "
+                "ORDER BY COALESCE(posts.schedule_at, posts.updated_at)",
+                (user_id,),
             ).fetchall()
         return [{**self._post_dict(r), "source": r["source"]} for r in rows]
 
@@ -258,24 +296,27 @@ class Store:
             )
 
     # --- autopilot topics -------------------------------------------------
-    def add_topic(self, source: str) -> str:
+    def add_topic(self, source: str, user_id: str) -> str:
         topic_id = uuid.uuid4().hex[:10]
         with self._conn() as db:
             db.execute(
-                "INSERT INTO topics (id, created_at, source, status) VALUES (?,?,?,?)",
-                (topic_id, now(), source, "waiting"),
+                "INSERT INTO topics (id, created_at, source, status, user_id) VALUES (?,?,?,?,?)",
+                (topic_id, now(), source, "waiting", user_id),
             )
         return topic_id
 
-    def list_topics(self) -> list[dict]:
+    def list_topics(self, user_id: str) -> list[dict]:
         with self._conn() as db:
-            rows = db.execute("SELECT * FROM topics ORDER BY created_at").fetchall()
+            rows = db.execute(
+                "SELECT * FROM topics WHERE user_id = ? ORDER BY created_at", (user_id,)
+            ).fetchall()
         return [dict(r) for r in rows]
 
-    def next_topic(self) -> dict | None:
+    def next_topic(self, user_id: str) -> dict | None:
         with self._conn() as db:
             row = db.execute(
-                "SELECT * FROM topics WHERE status = 'waiting' ORDER BY created_at LIMIT 1"
+                "SELECT * FROM topics WHERE user_id = ? AND status = 'waiting' ORDER BY created_at LIMIT 1",
+                (user_id,),
             ).fetchone()
         return dict(row) if row else None
 
@@ -284,9 +325,52 @@ class Store:
         with self._conn() as db:
             db.execute(f"UPDATE topics SET {sets} WHERE id = ?", (*fields.values(), topic_id))
 
-    def delete_topic(self, topic_id: str) -> None:
+    def delete_topic(self, topic_id: str, user_id: str) -> None:
         with self._conn() as db:
-            db.execute("DELETE FROM topics WHERE id = ?", (topic_id,))
+            db.execute("DELETE FROM topics WHERE id = ? AND user_id = ?", (topic_id, user_id))
+
+    # --- users --------------------------------------------------------------
+    def upsert_google_user(self, sub: str, email: str, name: str = "", picture: str = "") -> dict:
+        with self._conn() as db:
+            row = db.execute("SELECT id FROM users WHERE google_sub = ?", (sub,)).fetchone()
+            if row:
+                db.execute(
+                    "UPDATE users SET email = ?, name = ?, picture = ? WHERE id = ?",
+                    (email, name, picture, row["id"]),
+                )
+                user_id = row["id"]
+            else:
+                user_id = "u_" + uuid.uuid4().hex[:12]
+                db.execute(
+                    "INSERT INTO users (id, created_at, email, name, picture, google_sub) VALUES (?,?,?,?,?,?)",
+                    (user_id, now(), email, name, picture, sub),
+                )
+        return self.get_user(user_id)
+
+    def ensure_user(self, user_id: str, name: str = "") -> dict:
+        """Create a fixed-id user (the local or password owner) if missing."""
+        if not self.get_user(user_id):
+            with self._conn() as db:
+                db.execute(
+                    "INSERT INTO users (id, created_at, name) VALUES (?,?,?)", (user_id, now(), name)
+                )
+        return self.get_user(user_id)
+
+    def get_user(self, user_id: str) -> dict | None:
+        with self._conn() as db:
+            row = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        return dict(row) if row else None
+
+    def set_user_profile(self, user_id: str, profile_id: str) -> None:
+        with self._conn() as db:
+            db.execute("UPDATE users SET zernio_profile_id = ? WHERE id = ?", (profile_id, user_id))
+
+    def settings_with_prefix(self, prefix: str) -> dict:
+        with self._conn() as db:
+            rows = db.execute(
+                "SELECT key, value FROM settings WHERE key LIKE ?", (prefix + "%",)
+            ).fetchall()
+        return {r["key"]: json.loads(r["value"]) for r in rows}
 
     # --- helpers ----------------------------------------------------------
     @staticmethod

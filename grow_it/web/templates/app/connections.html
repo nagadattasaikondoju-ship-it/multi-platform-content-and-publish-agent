@@ -1,15 +1,61 @@
 {% extends "app/base.html" %}
 {% block page_title %}Connections{% endblock %}
 {% block main %}
+{% set is_owner = is_admin %}
 <div class="page-head">
   <div>
     <p class="eyebrow">Connections</p>
-    <h1 class="h-lg">What the loop is plugged into</h1>
-    <p>Keys live in the server's environment, never in the browser. This page only shows whether each one is set.</p>
+    <h1 class="h-lg">Your accounts</h1>
+    <p>Connect each platform once through its own sign-in. Grow it never sees your passwords, and you can disconnect any time.</p>
   </div>
 </div>
+
+{% if flash %}<div class="note {{ 'error' if flash[0] == 'error' else '' }}" style="margin-bottom:22px">{{ flash[1] }}</div>{% endif %}
+
+{% if provider != "zernio" %}
+  <div class="note warn" style="margin-bottom:22px">Publishing isn't switched on for this site yet, so accounts can't be connected. {% if is_owner %}Set <span class="code-inline">ZERNIO_API_KEY</span> to enable it.{% endif %}</div>
+{% elif info.accounts_error %}
+  <div class="note error" style="margin-bottom:22px">We couldn't load your accounts right now ({{ info.accounts_error }}). Please try again in a minute.</div>
+{% endif %}
+
+<div class="grid grid-2" id="accountGrid">
+  {% for p in platforms %}
+    {% set acct = by_platform.get(p.key) %}
+    <div class="panel connect-card{{ ' is-connected' if acct }}">
+      <div class="row" style="gap:14px;flex-wrap:nowrap">
+        {{ pbadge(p, "lg") }}
+        <div style="flex:1;min-width:0">
+          <div class="panel-title">{{ p.label }}</div>
+          {% if acct %}
+            <div class="muted" style="font-size:13.5px;overflow-wrap:anywhere">{{ ("@" ~ acct.name) if acct.name else "Connected" }}{% if acct.needs_reconnect %} · <b style="color:var(--error)">needs reconnecting</b>{% endif %}</div>
+          {% elif p.key == "snapchat" %}
+            <div class="muted" style="font-size:13.5px">Snapchat publishing is in closed beta.</div>
+          {% else %}
+            <div class="muted" style="font-size:13.5px">Not connected</div>
+          {% endif %}
+        </div>
+        {% if provider == "zernio" and not info.accounts_error %}
+          {% if acct %}
+            {% if acct.needs_reconnect and p.key in oauth_platforms %}<a class="btn btn-ghost btn-sm" href="/app/connect/{{ p.key }}">Reconnect</a>{% endif %}
+            <button class="btn btn-quiet btn-sm" data-disconnect="{{ acct.id }}" data-label="{{ p.label }}">Disconnect</button>
+          {% elif p.key in oauth_platforms %}
+            <a class="btn btn-primary btn-sm" href="/app/connect/{{ p.key }}">Connect</a>
+          {% elif p.key == "bluesky" %}
+            <button class="btn btn-primary btn-sm" data-open="blueskyDialog">Connect</button>
+          {% elif p.key == "telegram" %}
+            <button class="btn btn-primary btn-sm" data-open="telegramDialog">Connect</button>
+          {% endif %}
+        {% endif %}
+      </div>
+      {% if p.needs_media and not acct %}<p class="muted" style="margin:10px 0 0;font-size:12.5px">Posts here need an image or video.</p>{% endif %}
+    </div>
+  {% endfor %}
+</div>
+
+{% if is_owner %}
+<h2 class="h-sm" style="margin:40px 0 14px">Site setup <span class="muted" style="font-weight:400;font-size:14px">(only you see this)</span></h2>
 <div class="grid grid-3" style="margin-bottom:22px">
-  {% for key, name, role, var in [("gemini", "Gemini", "Writes the brief and every post", "GEMINI_API_KEY"), ("zernio", "Zernio", "Publishes to your connected accounts", "ZERNIO_API_KEY"), ("ayrshare", "Ayrshare", "Alternative publisher", "AYRSHARE_API_KEY")] %}
+  {% for key, name, role, var in [("gemini", "Gemini", "Writes the brief and every post", "GEMINI_API_KEY"), ("zernio", "Zernio", "Connects and publishes to accounts", "ZERNIO_API_KEY"), ("ayrshare", "Ayrshare", "Alternative publisher", "AYRSHARE_API_KEY")] %}
   <div class="panel">
     <div class="spread" style="margin-bottom:8px"><span class="panel-title">{{ name }}</span>
       {% if info[key] %}<span class="status s-published">connected</span>{% else %}<span class="status s-skipped">not set</span>{% endif %}</div>
@@ -18,45 +64,92 @@
   </div>
   {% endfor %}
 </div>
-
-<div class="panel">
-  <div class="spread" style="margin-bottom:6px">
-    <span class="panel-title">Accounts in Zernio</span>
-    <span class="muted" style="font-size:13.5px">Publishing through: <b>{{ info.provider if info.provider != "none" else "preview only" }}</b></span>
-  </div>
-  {% if not info.zernio %}
-    <p class="muted" style="margin:6px 0 0">Set <span class="code-inline">ZERNIO_API_KEY</span> to see and post to your connected accounts. Until then, publishing shows a preview of exactly what would be sent.</p>
-  {% elif info.accounts_error %}
-    <div class="note error" style="margin-top:10px">Could not reach Zernio: {{ info.accounts_error }}. Check that the server can reach <b>zernio.com</b> and that the key is current.</div>
-  {% elif not info.accounts %}
-    <div class="note warn" style="margin-top:10px">Zernio answered, but no accounts are connected. Connect them in the Zernio dashboard, then refresh this page.</div>
-  {% else %}
-    <div class="grid grid-3" style="margin-top:14px">
-      {% for a in info.accounts %}
-        {% set ours = {"twitter": "x", "googlebusiness": "google_business"}.get(a.platform, a.platform) %}
-        {% set p = platforms|selectattr("key", "equalto", ours)|first %}
-        <div class="ptile">{% if p %}{{ pbadge(p, "lg") }}{% endif %}<div><strong>{{ p.label if p else a.platform }}</strong><span class="muted">{{ a.name or "connected" }}{% if not a.active %} · inactive{% endif %}</span></div></div>
-      {% endfor %}
-    </div>
-  {% endif %}
-</div>
-
 <div class="panel spread">
   <div><span class="panel-title">Storage</span>
     <p class="muted" style="margin:4px 0 0;font-size:14px">
       {% if storage == "postgres" %}Postgres — loops and settings are kept permanently.
-      {% elif storage == "temporary" %}Temporary — this host wipes its disk, so loops can disappear. In Vercel, open <b>Storage → Create database → Neon</b> and connect it to this project; it sets <span class="code-inline">DATABASE_URL</span>. Then redeploy.
+      {% elif storage == "temporary" %}Temporary — connect a Postgres database (Vercel → Storage → Neon) to keep data.
       {% else %}SQLite file on this machine (<span class="code-inline">data/grow_it.db</span>).{% endif %}</p></div>
   {% if storage == "postgres" %}<span class="status s-published">permanent</span>{% elif storage == "temporary" %}<span class="status s-draft">temporary</span>{% else %}<span class="status s-approved">local</span>{% endif %}
 </div>
+{% endif %}
 
-<div class="panel">
-  <span class="panel-title">Setting a key</span>
-  <ol class="muted" style="margin:10px 0 0;padding-left:20px;display:grid;gap:6px;font-size:14.5px">
-    <li>Get the key: Gemini from <a href="https://aistudio.google.com/apikey">AI Studio</a>, Zernio from its dashboard after connecting your social accounts.</li>
-    <li>On Vercel: Project → Settings → Environment Variables. On your computer: the <span class="code-inline">.env</span> file next to where you run <span class="code-inline">grow-it serve</span>.</li>
-    <li>Redeploy (Vercel) or restart the server, then refresh this page.</li>
-    <li>On Vercel also set <span class="code-inline">GROW_IT_PASSWORD</span> (console sign-in) and <span class="code-inline">CRON_SECRET</span> (lets the daily autopilot run).</li>
-  </ol>
-</div>
+<dialog class="modal" id="blueskyDialog">
+  <form id="blueskyForm">
+    <div class="modal-body">
+      <h2 class="h-md" style="margin-bottom:6px">Connect Bluesky</h2>
+      <p class="muted" style="margin:0 0 18px;font-size:14px">Bluesky uses an <b>app password</b>, not your real password. Create one in Bluesky under <b>Settings → Privacy and security → App passwords</b>.</p>
+      <label class="field"><span>Handle</span><input class="input" name="handle" placeholder="you.bsky.social" required autocomplete="off"></label>
+      <label class="field"><span>App password</span><input class="input" name="app_password" placeholder="xxxx-xxxx-xxxx-xxxx" required autocomplete="off"></label>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-quiet btn-sm" type="button" data-close>Cancel</button>
+      <button class="btn btn-primary btn-sm" type="submit">Connect</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog class="modal" id="telegramDialog">
+  <div class="modal-body">
+    <h2 class="h-md" style="margin-bottom:6px">Connect Telegram</h2>
+    <p class="muted" style="margin:0 0 16px;font-size:14px">Link a channel or group you manage.</p>
+    <div id="telegramBody"><div class="skeleton" style="width:80%"></div></div>
+  </div>
+  <div class="modal-foot"><button class="btn btn-quiet btn-sm" type="button" data-close>Close</button></div>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelectorAll("[data-close]").forEach((b) => b.addEventListener("click", () => b.closest("dialog").close()));
+
+document.querySelectorAll("[data-disconnect]").forEach((b) => b.addEventListener("click", async () => {
+  if (!confirm(`Disconnect ${b.dataset.label}? Scheduled posts to it will stop.`)) return;
+  b.disabled = true;
+  try { await Grow.api("DELETE", `/api/connections/${b.dataset.disconnect}`); location.href = "/app/connections"; }
+  catch (err) { Grow.toast(err.message, "error"); b.disabled = false; }
+}));
+
+const bsDialog = document.getElementById("blueskyDialog");
+const bsForm = document.getElementById("blueskyForm");
+bsForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = bsForm.querySelector("[type=submit]");
+  btn.disabled = true;
+  try {
+    const res = await Grow.api("POST", "/api/connections/bluesky", { handle: bsForm.handle.value, app_password: bsForm.app_password.value });
+    location.href = `/app/connections?connected=bluesky&username=${encodeURIComponent(res.username || "")}`;
+  } catch (err) { Grow.toast(err.message, "error"); btn.disabled = false; }
+});
+
+const tgDialog = document.getElementById("telegramDialog");
+let tgTimer = null;
+tgDialog.addEventListener("close", () => clearInterval(tgTimer));
+async function startTelegram() {
+  const box = document.getElementById("telegramBody");
+  try {
+    const t = await Grow.api("POST", "/api/connections/telegram");
+    const steps = (t.instructions && t.instructions.length) ? t.instructions : [
+      `Add @${t.botUsername} as an admin of your channel or group.`,
+      `Send this message to @${t.botUsername}: ${t.code} @yourchannel`,
+    ];
+    box.innerHTML = `<div class="code-inline" style="display:inline-block;font-size:18px;padding:8px 14px;margin-bottom:14px">${Grow.escape(t.code)}</div>
+      <ol class="muted" style="margin:0 0 12px;padding-left:18px;font-size:14px;display:grid;gap:6px">${steps.map((s) => `<li>${Grow.escape(s)}</li>`).join("")}</ol>
+      <p class="muted" style="font-size:13px;margin:0" id="tgStatus">Waiting for Telegram… (code expires in 15 minutes)</p>`;
+    tgTimer = setInterval(async () => {
+      try {
+        const s = await Grow.api("GET", `/api/connections/telegram/${encodeURIComponent(t.code)}`);
+        if (s.status === "connected") { clearInterval(tgTimer); location.href = "/app/connections?connected=telegram"; }
+        if (s.status === "expired") { clearInterval(tgTimer); document.getElementById("tgStatus").textContent = "That code expired. Close and try again."; }
+      } catch (_) { /* keep polling */ }
+    }, 3000);
+  } catch (err) { box.innerHTML = `<div class="note error">${Grow.escape(err.message)}</div>`; }
+}
+
+document.querySelectorAll("[data-open]").forEach((b) => b.addEventListener("click", () => {
+  const d = document.getElementById(b.dataset.open);
+  d.showModal();
+  if (d === tgDialog) startTelegram();
+}));
+</script>
 {% endblock %}

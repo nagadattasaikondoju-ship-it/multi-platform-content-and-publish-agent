@@ -81,6 +81,19 @@ Loops, posts and settings are stored in SQLite at `data/grow_it.db` (override wi
 
 The design follows the makerzz.space design system: Archivo and Space Grotesk (self-hosted, SIL OFL), a teal-led palette with a warm yellow accent, pill actions and soft borders.
 
+## Public mode: Google sign-in and per-user accounts
+
+Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` and Grow it becomes a multi-user product:
+
+- People sign in with Google. Every loop, brand voice, autopilot queue and schedule belongs to its user; nobody can see or act on anyone else's.
+- Each user gets their own Zernio profile (created on their first Connect). The **Accounts** page sends them to each platform's own sign-in and back, so they never deal with Zernio. Bluesky connects with an app password and Telegram with a bot code.
+- Publishing only ever uses the signed-in user's connected accounts.
+- `GROW_IT_DAILY_LOOP_LIMIT` (default 20, `0` = unlimited) caps loops per user per 24 hours to protect your Gemini and Zernio costs. Emails in `GROW_IT_ADMIN_EMAILS` are unlimited and see the site-setup panel.
+
+Zernio bills the Zernio account owner per connected social account, so costs grow with your users' connections.
+
+Without Google credentials the app runs as a single owner: `GROW_IT_PASSWORD` locks it, or it is open on your own machine.
+
 ## Deploying to Vercel
 
 The repo deploys as-is: `app.py` exposes the FastAPI app and `vercel.json` sets a 300-second function limit plus a daily autopilot cron (03:30 UTC).
@@ -93,7 +106,11 @@ Set these in **Project → Settings → Environment Variables**:
 |---|---|
 | `GEMINI_API_KEY` | writing |
 | `ZERNIO_API_KEY` | publishing |
-| `GROW_IT_PASSWORD` | console sign-in. Without it a deployment keeps the console locked |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google sign-in (public mode). Redirect URI: `https://<your-domain>/auth/google/callback` |
+| `GROW_IT_SECRET` | signs session cookies; any long random string |
+| `GROW_IT_BASE_URL` | your public URL, e.g. `https://grow-it-orpin.vercel.app` (used for OAuth redirects) |
+| `GROW_IT_ADMIN_EMAILS` | comma-separated admin emails |
+| `GROW_IT_PASSWORD` | single-owner sign-in when Google isn't configured. With neither, a deployment keeps the console locked |
 | `CRON_SECRET` | lets Vercel Cron call `/api/cron/autopilot` |
 | `DATABASE_URL` | set automatically when you add **Storage → Neon** and connect it. Without a database, storage is temporary |
 
