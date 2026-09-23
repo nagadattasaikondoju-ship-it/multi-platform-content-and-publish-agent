@@ -1,0 +1,90 @@
+{% extends "app/base.html" %}
+{% block page_title %}Autopilot{% endblock %}
+{% block main %}
+<div class="page-head">
+  <div><p class="eyebrow">Autopilot</p><h1 class="h-lg">Set it once. The loop keeps going.</h1>
+  <p>Queue ideas below. At the time you set, autopilot takes the next one and runs the whole loop.</p></div>
+</div>
+{% if serverless %}<div class="note" style="margin-bottom:22px">On Vercel, autopilot is woken by a daily cron at 03:30 UTC (09:00 IST). A slot set later than that runs at the next day's wake-up. <b>CRON_SECRET</b> must be set in the project for it to run.</div>{% endif %}
+<div class="grid" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:22px;align-items:start" id="apGrid">
+  <form class="panel" id="apForm">
+    <div class="spread" style="margin-bottom:18px">
+      <span class="panel-title">Schedule</span>
+      <label class="switch"><input type="checkbox" name="enabled" {{ "checked" if settings.enabled }}> <span id="enabledLabel">{{ "On" if settings.enabled else "Off" }}</span></label>
+    </div>
+    <div class="grid grid-2" style="gap:14px">
+      <label class="field" style="margin:0"><span>Every</span>
+        <select class="input" name="every_days">{% for n in [1, 2, 3, 7] %}<option value="{{ n }}" {{ "selected" if settings.every_days == n }}>{{ "day" if n == 1 else n ~ " days" if n != 7 else "week" }}</option>{% endfor %}</select></label>
+      <label class="field" style="margin:0"><span>At</span><input class="input" type="time" name="time" value="{{ settings.time }}"></label>
+    </div>
+    {% set off = settings.utc_offset_minutes %}
+    <p class="muted" style="font-size:13px;margin:8px 0 18px">Times are in <b>UTC{{ "+" if off >= 0 else "-" }}{{ "%02d:%02d"|format((off|abs) // 60, (off|abs) % 60) }}</b><span id="tzNote"></span>. Next run: <b id="nextSlot"><time datetime="{{ next_slot.isoformat() }}" data-local></time></b> your time.</p>
+    <div class="field-label" style="margin-bottom:8px">When the loop finishes</div>
+    <label class="radio-card"><input type="radio" name="mode" value="review" {{ "checked" if settings.mode == "review" }}><div><b>Wait for me</b><span>Drafts stay in the console until you approve and publish them.</span></div></label>
+    <label class="radio-card"><input type="radio" name="mode" value="publish" {{ "checked" if settings.mode == "publish" }} {{ "disabled" if provider == "none" }}><div><b>Publish what passes</b><span>{{ "Posts that pass every check go live straight away; flagged ones wait for you." if provider != "none" else "Needs a Zernio or Ayrshare key first." }}</span></div></label>
+    <div class="spread" style="margin:16px 0 8px"><span class="field-label">Platforms</span><span class="muted" style="font-size:12.5px">none selected = all 13</span></div>
+    <div class="chip-row" style="margin-bottom:20px">
+      {% for p in platforms %}<label class="chip"><input type="checkbox" name="platforms" value="{{ p.key }}" {{ "checked" if p.key in settings.platforms }}>{{ pbadge(p) }}{{ p.label }}</label>{% endfor %}
+    </div>
+    <div class="row end"><button class="btn btn-primary" type="submit">Save schedule</button></div>
+  </form>
+
+  <div class="panel">
+    <div class="spread" style="margin-bottom:12px"><span class="panel-title">Idea queue</span><button class="btn btn-ghost btn-sm" id="runNow" type="button">Run next now</button></div>
+    <form id="topicForm" class="row" style="gap:8px;margin-bottom:16px;align-items:stretch">
+      <input class="input" name="source" placeholder="Add an idea, draft or link" style="flex:1;min-width:0" required>
+      <button class="btn btn-primary btn-sm" type="submit">{{ icon("plus", 16) }} Add</button>
+    </form>
+    <div id="topics">
+      {% for t in topics %}
+      <div class="spread" style="padding:12px 0;border-top:1px solid var(--border)">
+        <div style="min-width:0;flex:1"><div style="overflow-wrap:anywhere">{{ t.source|truncate(120) }}</div>
+          <div class="mono muted" style="margin-top:4px">{% if t.status == "used" %}USED · <a href="/app/runs/{{ t.run_id }}">OPEN LOOP</a>{% else %}WAITING{% endif %}</div></div>
+        <button class="btn btn-quiet btn-sm" data-del="{{ t.id }}" aria-label="Remove">Remove</button>
+      </div>
+      {% else %}
+      <p class="muted" style="margin:0;font-size:14px">The queue is empty. Add a few ideas and autopilot will work through them in order.</p>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const ap = document.getElementById("apForm");
+const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+if (-new Date().getTimezoneOffset() !== {{ settings.utc_offset_minutes }}) {
+  document.getElementById("tzNote").textContent = ` — saving switches to your timezone (${tz})`;
+}
+if (window.innerWidth < 900) document.getElementById("apGrid").style.gridTemplateColumns = "1fr";
+ap.enabled.addEventListener("change", () => (document.getElementById("enabledLabel").textContent = ap.enabled.checked ? "On" : "Off"));
+ap.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const body = {
+    enabled: ap.enabled.checked,
+    every_days: Number(ap.every_days.value),
+    time: ap.time.value,
+    utc_offset_minutes: -new Date().getTimezoneOffset(),
+    mode: ap.mode.value,
+    platforms: [...ap.querySelectorAll("input[name=platforms]:checked")].map((c) => c.value),
+  };
+  try {
+    const res = await Grow.api("PUT", "/api/autopilot", body);
+    document.getElementById("nextSlot").textContent = Grow.formatDate(res.next_slot);
+    Grow.toast(body.enabled ? "Autopilot is on" : "Schedule saved (autopilot off)");
+  } catch (err) { Grow.toast(err.message, "error"); }
+});
+document.getElementById("topicForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try { await Grow.api("POST", "/api/autopilot/topics", { source: e.target.source.value }); location.reload(); }
+  catch (err) { Grow.toast(err.message, "error"); }
+});
+document.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", async () => {
+  await Grow.api("DELETE", `/api/autopilot/topics/${b.dataset.del}`); location.reload();
+}));
+document.getElementById("runNow").addEventListener("click", async () => {
+  try { const run = await Grow.api("POST", "/api/autopilot/run-now"); location.href = run.url; }
+  catch (err) { Grow.toast(err.message, "error"); }
+});
+</script>
+{% endblock %}

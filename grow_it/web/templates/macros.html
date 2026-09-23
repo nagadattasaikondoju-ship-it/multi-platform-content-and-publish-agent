@@ -1,0 +1,46 @@
+{% macro logo_mark(cls="logo-mark") -%}
+<svg viewBox="0 0 40 40" class="{{ cls }}" aria-hidden="true">
+  <rect width="40" height="40" rx="12" fill="#0A545C"/>
+  <path d="M29.6 14.2A11 11 0 1 0 31 21.2" fill="none" stroke="#F2F7F6" stroke-width="2.8" stroke-linecap="round"/>
+  <path d="M25.9 13.4l3.8 1 1-3.9" fill="none" stroke="#F2F7F6" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M20 27.5v-7.5" stroke="#FFC22B" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M20 21.2c0-3.3 2.3-5.2 5.3-5.2 0 3.1-2.3 5.2-5.3 5.2z" fill="#FFC22B"/>
+  <path d="M20 23c0-2.7-1.9-4.2-4.3-4.2 0 2.5 1.9 4.2 4.3 4.2z" fill="#BFE0E2"/>
+</svg>
+{%- endmacro %}
+
+{% macro logo(sub=true, href="/") -%}
+<a class="logo" href="{{ href }}" aria-label="Grow it home">
+  {{ logo_mark() }}
+  <span><span class="logo-word">grow it</span>{% if sub %}<span class="logo-sub">one loop</span>{% endif %}</span>
+</a>
+{%- endmacro %}
+
+{% macro pbadge(p, size="") -%}
+<span class="pbadge {{ size }}" style="background:{{ p.color }}" aria-hidden="true">{{ p.short }}</span>
+{%- endmacro %}
+
+{% macro icon(name, size=none) -%}
+<svg viewBox="0 0 24 24"{% if size %} width="{{ size }}" height="{{ size }}"{% endif %} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+{%- if name == "paste" %}<path d="M9 5h-2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1.2"/><path d="M9 12h6M9 16h4"/>
+{%- elif name == "brief" %}<path d="M12 3a6 6 0 0 0-3.5 10.9V16h7v-2.1A6 6 0 0 0 12 3z"/><path d="M9.5 19.5h5M10.5 22h3"/>
+{%- elif name == "write" %}<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/>
+{%- elif name == "check" %}<path d="M12 3l7 3v5.5c0 4.3-2.9 8-7 9.5-4.1-1.5-7-5.2-7-9.5V6l7-3z"/><path d="M8.8 12.2l2.2 2.2 4.3-4.6"/>
+{%- elif name == "send" %}<path d="M21 3L10.5 13.5"/><path d="M21 3l-6.5 18-4-7.5L3 9.5 21 3z"/>
+{%- elif name == "loop" %}<path d="M20 11a8 8 0 0 0-14.3-4.9L4 8"/><path d="M4 3.5V8h4.5"/><path d="M4 13a8 8 0 0 0 14.3 4.9L20 16"/><path d="M20 20.5V16h-4.5"/>
+{%- elif name == "report" %}<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>
+{%- elif name == "hash" %}<path d="M5 9h14M5 15h14M10 4L8 20M16 4l-2 16"/>
+{%- elif name == "hand" %}<path d="M7 11V6.5a1.5 1.5 0 0 1 3 0V11"/><path d="M10 10V4.5a1.5 1.5 0 0 1 3 0V10"/><path d="M13 10V5.5a1.5 1.5 0 0 1 3 0V12"/><path d="M16 9.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-1.5a6 6 0 0 1-4.8-2.4L4 15.5a1.6 1.6 0 0 1 2.4-2.1L7 14"/>
+{%- elif name == "calendar" %}<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/>
+{%- elif name == "plug" %}<path d="M9 3v5M15 3v5"/><path d="M6 8h12v3a6 6 0 0 1-12 0V8z"/><path d="M12 17v4"/>
+{%- elif name == "voice" %}<path d="M4 12h2l3-7 4 14 3-9 2 2h2"/>
+{%- elif name == "clock" %}<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>
+{%- elif name == "arrow" %}<path d="M5 12h14M13 6l6 6-6 6"/>
+{%- elif name == "plus" %}<path d="M12 5v14M5 12h14"/>
+{%- elif name == "menu" %}<path d="M4 7h16M4 12h16M4 17h16"/>
+{%- elif name == "globe" %}<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.5 2.6 3.5 5.4 3.5 8.5s-1 5.9-3.5 8.5c-2.5-2.6-3.5-5.4-3.5-8.5s1-5.9 3.5-8.5z"/>
+{%- endif %}
+</svg>
+{%- endmacro %}
+
+{% macro status(s) -%}<span class="status s-{{ s }}">{{ s }}</span>{%- endmacro %}

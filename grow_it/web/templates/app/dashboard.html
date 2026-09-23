@@ -1,0 +1,59 @@
+{% extends "app/base.html" %}
+{% block page_title %}Loops{% endblock %}
+{% block main %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Console</p>
+    <h1 class="h-lg">Your loops</h1>
+    <p>Every idea you have run, with where each of its posts stands.</p>
+  </div>
+  <a class="btn btn-primary" href="/app/new">{{ icon("plus", 18) }} New loop</a>
+</div>
+
+<div class="stats">
+  <div class="stat"><b>{{ runs|length }}</b><span>Loops run</span></div>
+  <div class="stat"><b>{{ totals.get('draft', 0) + totals.get('approved', 0) + totals.get('previewed', 0) }}</b><span>Waiting for you</span></div>
+  <div class="stat"><b>{{ totals.get('scheduled', 0) }}</b><span>Scheduled</span></div>
+  <div class="stat"><b>{{ totals.get('published', 0) }}</b><span>Published</span></div>
+</div>
+
+<div class="panel spread" style="margin-bottom:22px">
+  <div class="row" style="gap:14px">
+    <div class="step-icon" style="margin:0;width:44px;height:44px">{{ icon("loop", 22) }}</div>
+    <div>
+      <div class="panel-title">Autopilot is {{ "on" if autopilot.enabled else "off" }}</div>
+      <div class="muted" style="font-size:14px">{% if autopilot.enabled %}Every {{ autopilot.every_days }} day{{ "s" if autopilot.every_days > 1 }} at {{ autopilot.time }} · {{ "review mode" if autopilot.mode == "review" else "publish mode" }}{% else %}Queue ideas and let the loop run on a timer.{% endif %}</div>
+    </div>
+  </div>
+  <a class="btn btn-quiet btn-sm" href="/app/autopilot">{{ "Manage" if autopilot.enabled else "Set up" }}</a>
+</div>
+
+{% if runs %}
+<div class="table-wrap">
+  <table class="data">
+    <thead><tr><th>Idea</th><th>Started</th><th>Loop</th><th>Posts</th><th></th></tr></thead>
+    <tbody>
+    {% for run in runs %}
+      <tr>
+        <td style="max-width:420px"><a class="rowlink" href="/app/runs/{{ run.id }}">{{ run.source|truncate(90) }}</a>
+          {% if run.origin == "autopilot" %}<div class="mono muted" style="margin-top:4px">AUTOPILOT</div>{% endif %}</td>
+        <td class="muted" style="white-space:nowrap"><time datetime="{{ run.created_at }}" data-local>{{ run.created_at }}</time></td>
+        <td>{{ status(run.status) }}</td>
+        <td><div class="row" style="gap:6px">
+          {% for s in ["published", "scheduled", "previewed", "approved", "draft", "failed"] %}{% if run.counts.get(s) %}<span class="status s-{{ s }}">{{ run.counts[s] }} {{ s }}</span>{% endif %}{% endfor %}
+        </div></td>
+        <td style="text-align:right"><a class="btn btn-quiet btn-sm" href="/app/runs/{{ run.id }}">Open</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="panel empty">
+  {{ logo_mark() }}
+  <h2 class="h-md">No loops yet</h2>
+  <p class="muted" style="max-width:44ch;margin:0 auto 22px">Paste one idea and Grow it will write, check and line up a post for every platform.</p>
+  <a class="btn btn-primary" href="/app/new">Start your first loop</a>
+</div>
+{% endif %}
+{% endblock %}

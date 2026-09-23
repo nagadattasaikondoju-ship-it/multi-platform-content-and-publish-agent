@@ -1,0 +1,24 @@
+{% extends "site.html" %}
+{% block title %}Sign in · Grow it{% endblock %}
+{% block main %}
+<section class="page-hero" style="padding-bottom:120px">
+  <div class="wrap">
+    <div class="panel" style="max-width:440px;margin:0 auto;padding:36px">
+      <div style="margin-bottom:22px">{{ logo_mark("logo-mark") }}</div>
+      <h1 class="h-md" style="margin-bottom:6px">Sign in to the console</h1>
+      {% if configured %}
+        <p class="muted" style="margin:0 0 22px">The console can publish to your accounts, so it is locked.</p>
+        {% if error %}<div class="note error" style="margin-bottom:16px">That password didn't match.</div>{% endif %}
+        <form method="post" action="/login">
+          <input type="hidden" name="next" value="{{ next }}">
+          <label class="field"><span>Password</span><input class="input" type="password" name="password" autofocus required autocomplete="current-password"></label>
+          <button class="btn btn-primary" style="width:100%" type="submit">Sign in</button>
+        </form>
+      {% else %}
+        <p class="muted" style="margin:0 0 16px">This deployment has no console password yet, so the console stays locked.</p>
+        <div class="note">Add an environment variable <span class="code-inline">GROW_IT_PASSWORD</span> in your Vercel project settings, then redeploy.</div>
+      {% endif %}
+    </div>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,40 @@
+{% extends "app/base.html" %}
+{% block page_title %}Calendar{% endblock %}
+{% block main %}
+<div class="page-head">
+  <div><p class="eyebrow">Calendar</p><h1 class="h-lg" id="monthTitle">Calendar</h1><p>Everything scheduled or published, in your timezone.</p></div>
+  <div class="row"><button class="btn btn-quiet btn-sm" id="prev" aria-label="Previous month">←</button><button class="btn btn-quiet btn-sm" id="today">Today</button><button class="btn btn-quiet btn-sm" id="next" aria-label="Next month">→</button></div>
+</div>
+<div class="cal-head">{% for d in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] %}<span>{{ d }}</span>{% endfor %}</div>
+<div class="cal-grid" id="calGrid"></div>
+{% if not posts %}<div class="note" style="margin-top:22px">Nothing scheduled yet. Publish or schedule posts from a loop and they appear here.</div>{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+const POSTS = {{ posts|tojson }};
+const PLATFORMS = Object.fromEntries({{ platforms|tojson }}.map((p) => [p.key, p]));
+let cursor = new Date(); cursor.setDate(1);
+function sameDay(a, b) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
+function draw() {
+  document.getElementById("monthTitle").textContent = cursor.toLocaleString(undefined, { month: "long", year: "numeric" });
+  const start = new Date(cursor); start.setDate(1 - ((cursor.getDay() + 6) % 7));
+  const today = new Date();
+  let html = "";
+  for (let i = 0; i < 42; i++) {
+    const day = new Date(start); day.setDate(start.getDate() + i);
+    const items = POSTS.filter((p) => p.schedule_at && sameDay(new Date(p.schedule_at), day));
+    const out = day.getMonth() !== cursor.getMonth();
+    if (out && !items.length && i >= 35) continue;
+    html += `<div class="cal-day ${out ? "out" : ""} ${sameDay(day, today) ? "today" : ""}">
+      <span class="cal-num">${day.toLocaleDateString(undefined, { day: "numeric", month: out ? "short" : undefined, weekday: window.innerWidth < 760 ? "short" : undefined })}</span>
+      ${items.map((p) => `<a class="cal-item" href="/app/runs/${p.run_id}" title="${Grow.escape(p.source)}">${Grow.badge(PLATFORMS[p.platform])}${new Date(p.schedule_at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })} · ${p.status}</a>`).join("")}
+    </div>`;
+  }
+  document.getElementById("calGrid").innerHTML = html;
+}
+document.getElementById("prev").onclick = () => { cursor.setMonth(cursor.getMonth() - 1); draw(); };
+document.getElementById("next").onclick = () => { cursor.setMonth(cursor.getMonth() + 1); draw(); };
+document.getElementById("today").onclick = () => { cursor = new Date(); cursor.setDate(1); draw(); };
+draw();
+</script>
+{% endblock %}

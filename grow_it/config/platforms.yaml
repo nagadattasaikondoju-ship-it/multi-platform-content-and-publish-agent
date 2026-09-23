@@ -1,0 +1,134 @@
+# Single source of truth for platform rules. Both the prompt and the
+# validator read from here. Limits change often; re-verify before launch.
+#
+# count_mode: chars | graphemes | x_weighted
+# max_chars applies to body + hashtags as published.
+
+x:
+  label: X (Twitter)
+  max_chars: 280
+  count_mode: x_weighted
+  hashtags: [0, 2]
+  tone: punchy, confident, contrarian hook in the first line
+  format: one standalone post; no preamble; at most 1 emoji
+  needs_media: false
+
+linkedin:
+  label: LinkedIn
+  max_chars: 3000
+  hashtags: [3, 5]
+  tone: professional but human; story -> insight -> lesson
+  format: >-
+    first line is a hook under 200 chars; short paragraphs separated by
+    blank lines; end with a question to drive comments; hashtags at the end
+  needs_media: false
+
+instagram:
+  label: Instagram
+  max_chars: 2200
+  hashtags: [3, 5]
+  tone: warm, visual, emoji-friendly
+  format: hook line first, value in short lines, clear CTA (save/share)
+  needs_media: true
+
+facebook:
+  label: Facebook
+  max_chars: 63206
+  soft_max_chars: 400
+  hashtags: [0, 3]
+  tone: conversational, community-oriented
+  format: short post ending in a question
+  needs_media: false
+
+threads:
+  label: Threads
+  max_chars: 500
+  hashtags: [0, 1]
+  tone: casual, opinionated, conversational
+  format: one short post, no corporate voice
+  needs_media: false
+
+bluesky:
+  label: Bluesky
+  max_chars: 300
+  count_mode: graphemes
+  hashtags: [0, 2]
+  tone: casual, thoughtful, slightly nerdy
+  format: one short post
+  needs_media: false
+
+tiktok:
+  label: TikTok
+  max_chars: 4000
+  soft_max_chars: 300
+  hashtags: [3, 5]
+  tone: energetic, Gen-Z friendly, direct
+  format: >-
+    caption in body; put a 30-45 second spoken video script in
+    extra.script with a 2-second hook
+  needs_media: true
+  extra_required: [script]
+
+youtube:
+  label: YouTube Shorts
+  max_chars: 5000
+  title_max: 100
+  hashtags: [3, 5]
+  tone: curiosity-driven, searchable
+  format: >-
+    SEO title (keyword first); description with a summary and CTA;
+    put a 45-60 second script in extra.script
+  needs_media: true
+  extra_required: [script]
+
+pinterest:
+  label: Pinterest
+  max_chars: 500
+  title_max: 100
+  hashtags: [0, 3]
+  tone: inspirational, keyword-rich, evergreen
+  format: descriptive, search-friendly description
+  needs_media: true
+
+reddit:
+  label: Reddit
+  max_chars: 40000
+  title_max: 300
+  hashtags: [0, 0]
+  tone: >-
+    genuine community member sharing value; zero marketing voice;
+    no emojis; no calls to follow or buy
+  format: >-
+    descriptive title; body with context, the useful details, and an open
+    question; suggest a fitting subreddit in extra.subreddit (no r/ prefix)
+  needs_media: false
+  extra_required: [subreddit]
+  banned_phrases: ["link in bio", "follow me", "check out my", "game-changer"]
+
+telegram:
+  label: Telegram
+  max_chars: 4096
+  hashtags: [0, 3]
+  tone: newsletter-style, informative
+  format: bold-free plain text with short sections and bullet points
+  needs_media: false
+
+snapchat:
+  label: Snapchat
+  max_chars: 160
+  hashtags: [0, 3]
+  tone: very casual, playful
+  format: one-liner caption for a vertical video
+  needs_media: true
+
+google_business:
+  label: Google Business Profile
+  max_chars: 1500
+  hashtags: [0, 0]
+  tone: local, helpful, trustworthy
+  format: >-
+    update or offer post; set extra.cta_type to one of BOOK, ORDER,
+    SHOP, LEARN_MORE, SIGN_UP, CALL
+  needs_media: false
+  extra_required: [cta_type]
+  allowed_cta_types: [BOOK, ORDER, SHOP, LEARN_MORE, SIGN_UP, CALL]

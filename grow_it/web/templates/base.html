@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Grow it — one idea, one loop, thirteen platforms{% endblock %}</title>
+  <meta name="description" content="{% block description %}Grow it turns one topic, draft or link into thirteen platform-native posts, checks every limit, and publishes on a schedule you approve once.{% endblock %}">
+  <link rel="icon" href="/static/img/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="/static/fonts/archivo.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/static/css/grow.css">
+  {% block head %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}">
+{% block body %}{% endblock %}
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="/static/js/grow.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

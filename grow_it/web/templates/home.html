@@ -1,0 +1,174 @@
+{% extends "site.html" %}
+{% block main %}
+<section class="hero">
+  <div class="hero-sun"></div>
+  <div class="wrap">
+    <a class="hero-badge" href="/how-it-works"><span class="dot"></span>See how one loop runs {{ icon("arrow", 16) }}</a>
+    <h1 class="display">One idea. One loop.<br><span class="accent">Thirteen platforms.</span></h1>
+    <p class="lede">Paste a topic, a draft or a link. Grow it writes a post for every platform, counts every character, and publishes on the schedule you approve.</p>
+
+    <div class="composer-wrap">
+    <span class="start-here" aria-hidden="true">Start here ↘</span>
+    <form class="composer" action="/start" method="post">
+      <label class="sr-only" for="heroSource">Your topic, draft or link</label>
+      <textarea id="heroSource" name="source" required placeholder="e.g. “Why small cafés should post one recipe a week” — or paste a blog post, a draft, or a link to an article"></textarea>
+      <div class="composer-bar">
+        <div class="row" style="gap:10px">
+          <div class="chip-row" style="gap:3px" aria-label="Posts to 13 platforms">
+            {% for p in platforms[:7] %}{{ pbadge(p) }}{% endfor %}
+            <span class="pbadge" style="background:var(--primary-20);color:var(--primary)">+{{ platforms|length - 7 }}</span>
+          </div>
+          <span class="composer-hint">Topic, draft or link</span>
+        </div>
+        <button class="btn btn-primary" type="submit">Start the loop {{ icon("arrow", 18) }}</button>
+      </div>
+    </form>
+    </div>
+  </div>
+  <svg class="hero-hills" viewBox="0 0 1440 220" preserveAspectRatio="none" aria-hidden="true">
+    <path d="M0 150 C 180 95 320 110 470 132 C 640 158 760 88 930 92 C 1110 96 1240 150 1440 118 L1440 220 L0 220 Z" fill="#dbeeee"/>
+    <path d="M0 176 C 210 140 360 150 540 170 C 720 190 880 132 1060 138 C 1230 144 1330 176 1440 166 L1440 220 L0 220 Z" fill="#e9f5f3"/>
+    <path d="M0 200 C 260 184 520 188 760 198 C 1000 208 1220 190 1440 196 L1440 220 L0 220 Z" fill="#ffffff"/>
+  </svg>
+</section>
+
+<section class="section" style="padding-top:40px">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">How the loop runs</p>
+      <h2 class="h-lg">Four steps. You are only in <span class="accent">the first</span> one.</h2>
+      <p class="lede">Everything after the paste is the loop's job: brief, write, check, publish — and then it goes around again.</p>
+    </div>
+    <div class="grid grid-4 loop">
+      <article class="card card-highlight">
+        <div class="step-num">0 1</div>
+        <div class="step-icon">{{ icon("paste") }}</div>
+        <h3 class="h-sm">You paste one idea</h3>
+        <p>A topic, a rough draft, or a link to an article. No brief to fill in and no prompt to engineer.</p>
+        <div class="step-foot">About 10 seconds</div>
+      </article>
+      <article class="card">
+        <div class="step-num">0 2</div>
+        <div class="step-icon">{{ icon("brief") }}</div>
+        <h3 class="h-sm">It writes the brief</h3>
+        <p>Gemini pulls out the thesis, the hooks, the audience and the facts — only facts that are in your source.</p>
+        <div class="step-foot">One call</div>
+      </article>
+      <article class="card">
+        <div class="step-num">0 3</div>
+        <div class="step-icon">{{ icon("write") }}</div>
+        <h3 class="h-sm">It writes thirteen posts</h3>
+        <p>One native post per platform, in parallel. Code counts every character; any draft that breaks a rule is rewritten.</p>
+        <div class="step-foot">Runs while you wait</div>
+      </article>
+      <article class="card">
+        <div class="step-num">0 4</div>
+        <div class="step-icon">{{ icon("send") }}</div>
+        <h3 class="h-sm">You approve. It posts.</h3>
+        <p>Edit anything, approve what you like, then publish now or schedule it — to every account you connected.</p>
+        <div class="step-foot">Now, later, or on autopilot</div>
+      </article>
+    </div>
+    <div class="loop-return">{{ icon("loop") }} Autopilot takes the next idea from your queue and runs the loop again — at the time you set, every time.</div>
+  </div>
+</section>
+
+<section class="section alt">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">What you actually get</p>
+      <h2 class="h-lg">Not a plan for content. <span class="accent">The content.</span></h2>
+      <p class="lede">Real output from one live run on a single topic: every post already inside its platform's limit before you see it.</p>
+    </div>
+    <div class="preview">
+      <div class="preview-bar"><i></i><i></i><i></i><span class="mono muted">GROW IT · LOOP · 13 OF 13 READY</span></div>
+      <div class="preview-body">
+        {% set samples = [
+          ("x", "Stop starting from scratch. One blog post can fuel 13 social posts. Save time, streamline your workflow, and maximize your reach without daily writing.\n\n#contentrepurposing #socialmediastrategy", 193, 280),
+          ("bluesky", "Tired of writing new content every single day? Stop starting from scratch. Turn one blog post into 13 social posts to save time, maximize value, and streamline your workflow instead of burning out.\n\n#contentmarketing #smallbusiness", 231, 300),
+          ("linkedin", "What if one blog post could fuel 13 social posts?\n\nAs a small business owner, trying to create new content daily is an uphill battle. You burn hours staring at a blank screen…\n\nThe secret is not creating more. It is maximizing what you already have.", 701, 3000),
+        ] %}
+        {% for key, text, used, limit in samples %}
+          {% set p = platforms|selectattr("key", "equalto", key)|first %}
+          <div class="post-card is-approved">
+            <div class="post-head">{{ pbadge(p) }}<h3>{{ p.label }}</h3>{{ status("approved") }}</div>
+            <div class="post-body"><div style="white-space:pre-line;font-size:14.5px">{{ text }}</div></div>
+            <div class="post-foot" style="display:block">
+              <div class="meter"><div class="meter-bar"><i style="width:{{ (used / limit * 100)|round(1) }}%"></i></div>
+              <div class="meter-text"><span>{{ used }} / {{ limit }}</span><span>checked</span></div></div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">What the loop promises</p>
+      <h2 class="h-lg">Set it once. Then <span class="accent">stop thinking about it.</span></h2>
+    </div>
+    <div class="grid grid-2">
+      <div class="card principle"><div class="step-icon">{{ icon("check") }}</div><div>
+        <h3 class="h-sm">It never breaks a limit</h3>
+        <p>The model writes; code counts. X is weighted like X counts it, Bluesky counts graphemes, and a failed draft is sent back with the exact error until it fits.</p></div></div>
+      <div class="card principle"><div class="step-icon">{{ icon("report") }}</div><div>
+        <h3 class="h-sm">It shows its working</h3>
+        <p>Every loop has a report: what it read, the brief it wrote, how many attempts each post took, and what it scheduled. Print it or save it as a PDF.</p></div></div>
+      <div class="card principle"><div class="step-icon">{{ icon("hash") }}</div><div>
+        <h3 class="h-sm">It never invents a number</h3>
+        <p>Facts and figures only come from your source. If it is not in what you pasted, it does not appear in a post.</p></div></div>
+      <div class="card principle"><div class="step-icon">{{ icon("hand") }}</div><div>
+        <h3 class="h-sm">Nothing posts without you</h3>
+        <p>Publishing is a preview until you switch it to live. Autopilot starts in review mode, so drafts wait for your approval.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<section class="section alt">
+  <div class="wrap">
+    <div class="section-head spread" style="align-items:flex-end">
+      <div>
+        <p class="eyebrow">Where it posts</p>
+        <h2 class="h-lg">One approval. <span class="accent">Thirteen destinations.</span></h2>
+        <p class="lede">Connect each account once through the platform's own sign-in, inside your publishing provider. Grow it never sees a password.</p>
+      </div>
+      <a class="btn btn-ghost" href="/platforms">All platform rules</a>
+    </div>
+    <div class="grid grid-3">
+      {% for p in platforms %}
+      <div class="ptile">{{ pbadge(p, "lg") }}<div><strong>{{ p.label }}</strong><span class="muted">{{ "{:,}".format(p.max_chars) }} characters{% if p.title_max %} · title {{ p.title_max }}{% endif %}</span></div></div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="narrow">
+    <p class="eyebrow">Before you paste anything</p>
+    <h2 class="h-lg">The questions people ask first.</h2>
+    <div class="faq" style="margin-top:32px">
+      <details open><summary>What do I actually paste?</summary><p>Anything with an idea in it: a one-line topic, a rough draft, a full blog post, or a link to an article. Links are fetched and reduced to their readable text before the brief is written.</p></details>
+      <details><summary>Will it post without asking me?</summary><p>No. Every publish is a preview until you choose “live”. Autopilot has two modes: review (drafts wait for you) and publish (clean drafts go out on their own). It starts in review.</p></details>
+      <details><summary>What happens when a post is too long?</summary><p>The validator rejects it and sends the exact problem back to the model — “302 characters, the limit is 280, cut 22”. After three attempts it trims the post to fit and flags it for your review instead of posting it.</p></details>
+      <details><summary>Which accounts can it post to?</summary><p>Any of the thirteen you connect in Zernio (or Ayrshare). Platforms without a connected account are skipped, never guessed.</p></details>
+    </div>
+    <p style="margin-top:24px"><a href="/pricing#faq">More answers →</a></p>
+  </div>
+</section>
+
+<section class="section tight" style="padding-top:0">
+  <div class="wrap">
+    <div class="cta-band">
+      <span class="ring" style="width:520px;height:520px;left:-160px;top:-260px"></span>
+      <span class="ring" style="width:380px;height:380px;right:-120px;bottom:-220px"></span>
+      <p class="eyebrow" style="color:var(--tertiary)">Start here</p>
+      <h2 class="h-lg">Paste one idea. Watch the loop run.</h2>
+      <p class="lede">Thirteen posts, every limit checked, ready to approve.</p>
+      <a class="btn btn-secondary btn-lg" href="/app/new">Start a loop</a>
+    </div>
+  </div>
+</section>
+{% endblock %}
