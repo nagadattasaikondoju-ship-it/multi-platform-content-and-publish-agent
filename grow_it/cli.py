@@ -55,22 +55,60 @@ def cmd_generate(args) -> int:
     return 0
 
 
+def _provider(requested: str) -> str:
+    if requested != "auto":
+        return requested
+    if os.environ.get("ZERNIO_API_KEY"):
+        return "zernio"
+    return "ayrshare"
+
+
 def cmd_publish(args) -> int:
+    from . import zernio
     from .models import GeneratedPost
 
     data = json.loads(Path(args.run_file).read_text())
     results = [GeneratedPost.model_validate(p) for p in data["posts"]]
     wanted = set(args.platforms.split(",")) if args.platforms else None
     schedule_at = datetime.fromisoformat(args.schedule) if args.schedule else None
+    provider = _provider(args.provider)
+
+    accounts: dict[str, str] = {}
+    if provider == "zernio":
+        try:
+            accounts = zernio.account_map(zernio.list_accounts())
+            print(f"Zernio accounts connected for: {', '.join(sorted(accounts)) or 'none'}")
+        except Exception as e:
+            if args.live:
+                raise
+            # A dry-run can still show the payloads without reaching Zernio.
+            print(f"Could not list Zernio accounts ({e}); previewing with placeholder ids")
+            accounts = {key: f"<{key}-account-id>" for key in zernio.ZERNIO_PLATFORM}
 
     for r in results:
-        if wanted and r.post.platform not in wanted:
+        key = r.post.platform
+        if wanted and key not in wanted:
             continue
         if r.needs_review and not args.include_flagged:
-            print(f"skip {r.post.platform}: needs review")
+            print(f"skip {key}: needs review")
             continue
-        result = publish(r.post, schedule_at=schedule_at, dry_run=not args.live)
-        print(r.post.platform, json.dumps(result, ensure_ascii=False))
+        if provider == "zernio":
+            if key not in accounts:
+                print(f"skip {key}: no connected Zernio account")
+                continue
+            result = zernio.publish(r.post, accounts[key], schedule_at=schedule_at, dry_run=not args.live)
+        else:
+            result = publish(r.post, schedule_at=schedule_at, dry_run=not args.live)
+        print(key, json.dumps(result, ensure_ascii=False))
+    return 0
+
+
+def cmd_accounts(args) -> int:
+    from . import zernio
+
+    for account in zernio.list_accounts():
+        name = account.get("username") or account.get("displayName") or ""
+        print(f"{account['platform']:16} {account['_id']}  {name}")
     return 0
 
 
@@ -97,13 +135,23 @@ def main(argv: list[str] | None = None) -> int:
     gen.add_argument("--out", default="runs")
     gen.set_defaults(func=cmd_generate)
 
-    pub = sub.add_parser("publish", help="Send a generated run to Ayrshare")
+    pub = sub.add_parser("publish", help="Send a generated run to Zernio or Ayrshare")
     pub.add_argument("run_file")
     pub.add_argument("--platforms")
     pub.add_argument("--schedule", help="ISO-8601 time with timezone, e.g. 2026-10-01T09:00:00+05:30")
     pub.add_argument("--include-flagged", action="store_true")
+    pub.add_argument(
+        "--provider",
+        choices=["auto", "zernio", "ayrshare"],
+        default="auto",
+        help="auto uses Zernio when ZERNIO_API_KEY is set, otherwise Ayrshare",
+    )
     pub.add_argument("--live", action="store_true", help="Actually post (default is dry-run)")
     pub.set_defaults(func=cmd_publish)
+
+    sub.add_parser("accounts", help="List social accounts connected in Zernio").set_defaults(
+        func=cmd_accounts
+    )
 
     sub.add_parser("platforms", help="List supported platforms").set_defaults(
         func=lambda _: print("\n".join(f"{k:16} {s.label}" for k, s in load_specs().items())) or 0

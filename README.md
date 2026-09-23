@@ -1,6 +1,6 @@
 # Multi-Platform Content & Publish Agent (grow-it)
 
-An AI agent built on Google Gemini that turns one topic, draft or article into 13 platform-native posts. Each post is checked for its platform's character limits, hashtag rules and required fields, then published or scheduled through one API.
+An AI agent built on Google Gemini that turns one topic, draft or article into 13 platform-native posts. Each post is checked for its platform's character limits, hashtag rules and required fields, then published or scheduled through one API (Zernio or Ayrshare).
 
 ## How It Works
 
@@ -15,7 +15,7 @@ topic | draft | URL | file
 4. Validate/repair  Deterministic checks. On failure the exact errors
                     are fed back to Gemini (up to 3 attempts), then
                     force-fit and flagged for human review
-5. Publish          Ayrshare API: post now or schedule (dry-run by default)
+5. Publish          Zernio (or Ayrshare): post now or schedule (dry-run by default)
 ```
 
 LLMs can't count characters reliably, so the model writes and `grow_it/validate.py` does the counting:
@@ -53,8 +53,7 @@ git clone https://github.com/nagadattasaikondoju-ship-it/multi-platform-content-
 cd multi-platform-content-and-publish-agent
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-cp .env.example .env   # add GEMINI_API_KEY (and AYRSHARE_API_KEY to publish)
-export $(grep -v '^#' .env | xargs)
+cp .env.example .env   # add GEMINI_API_KEY (and ZERNIO_API_KEY to publish)
 ```
 
 ## Usage
@@ -67,7 +66,10 @@ grow-it generate https://example.com/blog/post --platforms x,linkedin,threads
 
 # Output: runs/run-<timestamp>.json and a readable runs/run-<timestamp>.md
 
-# Preview the Ayrshare payloads (dry-run is the default)
+# See which social accounts are connected in Zernio
+grow-it accounts
+
+# Preview the payloads (dry-run is the default)
 grow-it publish runs/run-20261001-090000.json
 
 # Actually schedule them
@@ -75,6 +77,8 @@ grow-it publish runs/run-20261001-090000.json --schedule 2026-10-01T09:00:00+05:
 ```
 
 Posts flagged `needs_review` are skipped at publish time unless you pass `--include-flagged`.
+
+`publish` uses Zernio when `ZERNIO_API_KEY` is set, otherwise Ayrshare; force one with `--provider zernio|ayrshare`. With Zernio, each post goes to the first active account connected for that platform, and platforms with no connected account are skipped. TikTok posts go to the creator's TikTok inbox (draft) by default, because TikTok requires the creator to confirm before direct publishing. A Google Business call-to-action button is only added when a URL is supplied.
 
 ## Environment Variables
 
@@ -85,7 +89,8 @@ The CLI reads a `.env` file in the current directory automatically (it never ove
 | `GEMINI_API_KEY` | generation ([get one](https://aistudio.google.com/apikey)) |
 | `GROW_IT_BRIEF_MODEL` / `GROW_IT_POST_MODEL` | optional model overrides (default `gemini-flash-latest`; Pro models have no free-tier quota) |
 | `GROW_IT_FALLBACK_MODELS` | comma-separated models tried when the main one is overloaded or rate-limited |
-| `AYRSHARE_API_KEY` | `publish --live` |
+| `ZERNIO_API_KEY` | `publish --live` and `accounts` via [Zernio](https://zernio.com) |
+| `AYRSHARE_API_KEY` | `publish --live --provider ayrshare` |
 
 Never commit API keys, access tokens, or credentials to the repository.
 
@@ -101,6 +106,7 @@ grow_it/
 ├── pipeline.py             # brief → parallel fan-out → validate/repair
 ├── validate.py             # deterministic compliance checks + force_fit
 ├── publish.py              # Ayrshare payloads, dry-run by default
+├── zernio.py               # Zernio accounts + payloads, dry-run by default
 └── cli.py                  # `grow-it` command
 tests/                      # run with `pytest` (no API keys needed)
 ```
@@ -110,13 +116,13 @@ tests/                      # run with `pytest` (no API keys needed)
 - [x] Content input schema and brand-voice notes
 - [x] Rules for all 13 platforms
 - [x] Gemini generation with validate-and-repair loop
-- [x] Publishing and scheduling through Ayrshare (dry-run by default)
+- [x] Publishing and scheduling through Zernio or Ayrshare (dry-run by default)
 - [ ] Media generation: images (Gemini image), carousels, short videos (Remotion)
 - [ ] Niche research: scrape top-performing posts to inform the brief
 - [ ] Review and approval dashboard (FastAPI + web UI or Telegram bot)
 - [ ] Posting cadence and best-time scheduling with a job queue
 - [ ] Analytics pull and PDF run report
-- [ ] Multi-user profiles (Ayrshare `Profile-Key`) and billing
+- [ ] Multi-user profiles and billing
 
 ## Contributing
 
