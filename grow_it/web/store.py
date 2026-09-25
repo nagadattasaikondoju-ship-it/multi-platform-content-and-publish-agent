@@ -370,6 +370,20 @@ class Store:
                 )
         return self.get_user(user_id)
 
+    def adopt_unowned(self, user_id: str) -> None:
+        """Hand loops, ideas and settings saved before sign-in existed to this user.
+        Whoever adopts first keeps them; afterwards there is nothing left to adopt."""
+        with self._conn() as db:
+            db.execute("UPDATE runs SET user_id = ? WHERE user_id IS NULL", (user_id,))
+            db.execute("UPDATE topics SET user_id = ? WHERE user_id IS NULL", (user_id,))
+            for key in ("voice", "autopilot"):
+                row = db.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+                if not row:
+                    continue
+                if not db.execute("SELECT 1 FROM settings WHERE key = ?", (f"{key}:{user_id}",)).fetchone():
+                    db.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (f"{key}:{user_id}", row["value"]))
+                db.execute("DELETE FROM settings WHERE key = ?", (key,))
+
     def get_user(self, user_id: str) -> dict | None:
         with self._conn() as db:
             row = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
