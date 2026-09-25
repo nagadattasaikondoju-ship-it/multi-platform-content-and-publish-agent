@@ -2,6 +2,7 @@
 
 import asyncio
 import hmac
+import logging
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -23,6 +24,7 @@ from .service import LimitReached, Service, measure_post, normalise_field, provi
 from .store import Store, is_postgres_url
 
 HERE = Path(__file__).parent
+log = logging.getLogger("grow_it.web")
 templates = Jinja2Templates(directory=HERE / "templates")
 _macros = templates.env.get_template("macros.html").module
 templates.env.globals.update(
@@ -170,7 +172,8 @@ def create_app(store: Store | None = None, llm_factory=GeminiLLM, autopilot: boo
     async def login(request: Request):
         form = await request.form()
         target = safe_next(str(form.get("next") or "/app"))
-        if auth.mode() == "password" and hmac.compare_digest(str(form.get("password", "")), auth.password()):
+        # The owner password also works alongside hosted sign-in, as a way in if that breaks.
+        if auth.password() and auth.mode() in ("password", "oauth") and hmac.compare_digest(str(form.get("password", "")), auth.password()):
             store.ensure_user(auth.OWNER_USER, "Owner")
             store.adopt_unowned(auth.OWNER_USER)
             return session_response(target, auth.OWNER_USER)
@@ -182,9 +185,18 @@ def create_app(store: Store | None = None, llm_factory=GeminiLLM, autopilot: boo
         if not auth.provider():
             return RedirectResponse("/login", status_code=303)
         state = auth.new_state()
-        response = RedirectResponse(
-            auth.login_url(f"{base_url(request)}{auth.callback_path()}", state), status_code=303
-        )
+        callback = f"{base_url(request)}{auth.callback_path()}"
+        if auth.provider() == "neon":
+            try:
+                url, challenge = auth.neon_start(callback, base_url(request))
+            except Exception as e:
+                log.warning("Neon Auth sign-in could not start: %s", e)
+                return RedirectResponse("/login?error=signin", status_code=303)
+            response = RedirectResponse(url, status_code=303)
+            response.set_cookie(auth.NEON_CHALLENGE_COOKIE, challenge, httponly=True, max_age=900,
+                                secure=bool(os.getenv("VERCEL")), samesite="lax")
+        else:
+            response = RedirectResponse(auth.login_url(callback, state), status_code=303)
         response.set_cookie(auth.STATE_COOKIE, f"{state}|{safe_next(next)}", httponly=True, max_age=600,
                             secure=bool(os.getenv("VERCEL")), samesite="lax")
         return response
@@ -193,13 +205,22 @@ def create_app(store: Store | None = None, llm_factory=GeminiLLM, autopilot: boo
     @app.get("/auth/google/callback")
     async def oauth_callback(request: Request, code: str = "", state: str = "", error: str = ""):
         expected, _, target = request.cookies.get(auth.STATE_COOKIE, "").partition("|")
-        if error or not code or not expected or not hmac.compare_digest(state, expected):
-            return RedirectResponse("/login?error=signin", status_code=303)
         try:
-            info = await asyncio.to_thread(
-                auth.fetch_user, code, f"{base_url(request)}{auth.callback_path()}"
-            )
-        except Exception:
+            if auth.provider() == "neon":
+                # Neon Auth binds the sign-in to its challenge cookie, which only this browser holds.
+                verifier = request.query_params.get(auth.NEON_VERIFIER_PARAM, "")
+                challenge = request.cookies.get(auth.NEON_CHALLENGE_COOKIE, "")
+                if error or not verifier or not challenge or not expected:
+                    raise ValueError("incomplete sign-in")
+                info = await asyncio.to_thread(auth.neon_user, verifier, challenge, base_url(request))
+            else:
+                if error or not code or not expected or not hmac.compare_digest(state, expected):
+                    raise ValueError("bad state")
+                info = await asyncio.to_thread(
+                    auth.fetch_user, code, f"{base_url(request)}{auth.callback_path()}"
+                )
+        except Exception as e:
+            log.warning("Sign-in callback failed: %s", e)
             return RedirectResponse("/login?error=signin", status_code=303)
         user = store.upsert_google_user(info["sub"], info.get("email", ""), info.get("name", ""),
                                         info.get("picture", ""))
@@ -207,6 +228,7 @@ def create_app(store: Store | None = None, llm_factory=GeminiLLM, autopilot: boo
             store.adopt_unowned(user["id"])
         response = session_response(safe_next(target), user["id"])
         response.delete_cookie(auth.STATE_COOKIE)
+        response.delete_cookie(auth.NEON_CHALLENGE_COOKIE)
         return response
 
     @app.get("/logout")
