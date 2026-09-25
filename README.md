@@ -83,9 +83,14 @@ The design follows the makerzz.space design system: Archivo and Space Grotesk (s
 
 ## Public mode: Google sign-in and per-user accounts
 
-Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` and Grow it becomes a multi-user product:
+Configure a hosted sign-in and Grow it becomes a multi-user product. Either:
 
-- People sign in with Google. Every loop, brand voice, autopilot queue and schedule belongs to its user; nobody can see or act on anyone else's.
+- **Auth0** (recommended): `AUTH0_DOMAIN`, `AUTH0_CLIENT_ID`, `AUTH0_CLIENT_SECRET`. Auth0's page offers Google and email sign-up. Allowed Callback URL: `https://<your-domain>/auth/callback`; Allowed Logout URL: `https://<your-domain>/`.
+- **Google directly**: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, redirect URI `https://<your-domain>/auth/google/callback`.
+
+Then:
+
+- People sign in. Every loop, brand voice, autopilot queue and schedule belongs to its user; nobody can see or act on anyone else's.
 - Each user gets their own Zernio profile (created on their first Connect). The **Accounts** page sends them to each platform's own sign-in and back, so they never deal with Zernio. Bluesky connects with an app password and Telegram with a bot code.
 - Publishing only ever uses the signed-in user's connected accounts.
 - `GROW_IT_DAILY_LOOP_LIMIT` (default 20, `0` = unlimited) caps loops per user per 24 hours to protect your Gemini and Zernio costs. Emails in `GROW_IT_ADMIN_EMAILS` are unlimited and see the site-setup panel.
@@ -106,7 +111,8 @@ Set these in **Project → Settings → Environment Variables**:
 |---|---|
 | `GEMINI_API_KEY` | writing |
 | `ZERNIO_API_KEY` | publishing |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google sign-in (public mode). Redirect URI: `https://<your-domain>/auth/google/callback` |
+| `AUTH0_DOMAIN` / `AUTH0_CLIENT_ID` / `AUTH0_CLIENT_SECRET` | Auth0 sign-in (public mode). Callback: `https://<your-domain>/auth/callback` |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google sign-in instead of Auth0. Redirect URI: `https://<your-domain>/auth/google/callback` |
 | `GROW_IT_SECRET` | signs session cookies; any long random string |
 | `GROW_IT_BASE_URL` | your public URL, e.g. `https://grow-it-orpin.vercel.app` (used for OAuth redirects) |
 | `GROW_IT_ADMIN_EMAILS` | comma-separated admin emails |

@@ -114,7 +114,7 @@ def test_google_callback_rejects_a_forged_state(app):
     client = TestClient(app)
     client.get("/auth/google", follow_redirects=False)
     bad = client.get("/auth/google/callback?code=code-alice&state=forged", follow_redirects=False)
-    assert bad.headers["location"] == "/login?error=google"
+    assert bad.headers["location"] == "/login?error=signin"
     assert client.get("/api/runs").status_code == 401
 
 
@@ -234,3 +234,36 @@ def test_admin_emails_skip_the_limit_and_see_site_setup(app, monkeypatch):
             assert alice.post("/api/runs", json={"source": "idea", "platforms": ["x"]}).status_code == 201
         assert "Site setup" in alice.get("/app/connections").text
         assert "Site setup" not in bob.get("/app/connections").text
+
+
+@pytest.fixture
+def auth0_app(fake, monkeypatch):
+    monkeypatch.setenv("AUTH0_DOMAIN", "growit.eu.auth0.com")
+    monkeypatch.setenv("AUTH0_CLIENT_ID", "a0id")
+    monkeypatch.setenv("AUTH0_CLIENT_SECRET", "a0secret")
+    people = {"a0-code": {"sub": "google-oauth2|123", "email": "dana@example.com", "name": "Dana"}}
+    monkeypatch.setattr(auth, "auth0_user", lambda code, redirect_uri: people[code])
+    return create_app(Store(":memory:"), llm_factory=FakeLLM, autopilot=False)
+
+
+def test_auth0_sign_in_round_trip(auth0_app):
+    client = TestClient(auth0_app)
+    assert "Continue with Google or email" in client.get("/login").text
+    start = client.get("/auth/login?next=/app/voice", follow_redirects=False)
+    url = urlparse(start.headers["location"])
+    query = parse_qs(url.query)
+    assert url.netloc == "growit.eu.auth0.com" and url.path == "/authorize"
+    assert query["client_id"] == ["a0id"]
+    assert query["redirect_uri"] == ["http://testserver/auth/callback"]
+    back = client.get(f"/auth/callback?code=a0-code&state={query['state'][0]}", follow_redirects=False)
+    assert back.headers["location"] == "/app/voice"
+    with client:
+        assert "Dana" in client.get("/app").text
+
+
+def test_auth0_logout_ends_the_auth0_session_too(auth0_app):
+    client = TestClient(auth0_app)
+    out = client.get("/logout", follow_redirects=False)
+    url = urlparse(out.headers["location"])
+    assert url.netloc == "growit.eu.auth0.com" and url.path == "/v2/logout"
+    assert parse_qs(url.query)["returnTo"] == ["http://testserver/"]

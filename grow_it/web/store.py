@@ -6,6 +6,7 @@ The SQL is written once with ? placeholders and translated for Postgres.
 
 import json
 import sqlite3
+import threading
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -103,6 +104,7 @@ class Store:
         self.path = str(target)
         self.postgres = is_postgres_url(self.path)
         self._memory = None
+        self._memory_lock = threading.RLock()
         if self.postgres:
             self.kind = "postgres"
         else:
@@ -132,6 +134,18 @@ class Store:
 
     @contextmanager
     def _conn(self):
+        # The shared in-memory connection (tests) must not be used by two threads at once;
+        # file and Postgres stores open a fresh connection per call instead.
+        if self._memory:
+            with self._memory_lock:
+                with self._open() as db:
+                    yield db
+            return
+        with self._open() as db:
+            yield db
+
+    @contextmanager
+    def _open(self):
         if self.postgres:
             import psycopg
             from psycopg.rows import dict_row

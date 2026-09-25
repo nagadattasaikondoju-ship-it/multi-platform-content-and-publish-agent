@@ -112,6 +112,7 @@ def create_app(store: Store | None = None, llm_factory=GeminiLLM, autopilot: boo
         context.setdefault("storage", store.kind)
         context.setdefault("user", getattr(request.state, "user", None))
         context.setdefault("auth_mode", auth.mode())
+        context.setdefault("auth_provider", auth.provider())
         context.setdefault("is_admin", service.is_admin(context["user"]))
         return templates.TemplateResponse(request, name, context)
 
@@ -171,29 +172,31 @@ def create_app(store: Store | None = None, llm_factory=GeminiLLM, autopilot: boo
             return session_response(target, auth.OWNER_USER)
         return RedirectResponse(f"/login?next={quote(target)}&error=1", status_code=303)
 
+    @app.get("/auth/login")
     @app.get("/auth/google")
-    def google_start(request: Request, next: str = "/app"):
-        if not auth.google_enabled():
+    def oauth_start(request: Request, next: str = "/app"):
+        if not auth.provider():
             return RedirectResponse("/login", status_code=303)
         state = auth.new_state()
         response = RedirectResponse(
-            auth.google_login_url(f"{base_url(request)}/auth/google/callback", state), status_code=303
+            auth.login_url(f"{base_url(request)}{auth.callback_path()}", state), status_code=303
         )
         response.set_cookie(auth.STATE_COOKIE, f"{state}|{safe_next(next)}", httponly=True, max_age=600,
                             secure=bool(os.getenv("VERCEL")), samesite="lax")
         return response
 
+    @app.get("/auth/callback")
     @app.get("/auth/google/callback")
-    async def google_callback(request: Request, code: str = "", state: str = "", error: str = ""):
+    async def oauth_callback(request: Request, code: str = "", state: str = "", error: str = ""):
         expected, _, target = request.cookies.get(auth.STATE_COOKIE, "").partition("|")
         if error or not code or not expected or not hmac.compare_digest(state, expected):
-            return RedirectResponse("/login?error=google", status_code=303)
+            return RedirectResponse("/login?error=signin", status_code=303)
         try:
             info = await asyncio.to_thread(
-                auth.google_user, code, f"{base_url(request)}/auth/google/callback"
+                auth.fetch_user, code, f"{base_url(request)}{auth.callback_path()}"
             )
         except Exception:
-            return RedirectResponse("/login?error=google", status_code=303)
+            return RedirectResponse("/login?error=signin", status_code=303)
         user = store.upsert_google_user(info["sub"], info.get("email", ""), info.get("name", ""),
                                         info.get("picture", ""))
         response = session_response(safe_next(target), user["id"])
@@ -201,8 +204,12 @@ def create_app(store: Store | None = None, llm_factory=GeminiLLM, autopilot: boo
         return response
 
     @app.get("/logout")
-    def logout():
-        response = RedirectResponse("/", status_code=303)
+    def logout(request: Request):
+        target = "/"
+        if auth.provider() == "auth0":
+            # Also end the Auth0 session, or the next sign-in skips the account picker.
+            target = auth.auth0_logout_url(f"{base_url(request)}/")
+        response = RedirectResponse(target, status_code=303)
         response.delete_cookie(auth.SESSION_COOKIE)
         return response
 
