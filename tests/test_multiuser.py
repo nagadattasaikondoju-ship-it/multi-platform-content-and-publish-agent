@@ -267,3 +267,39 @@ def test_auth0_logout_ends_the_auth0_session_too(auth0_app):
     url = urlparse(out.headers["location"])
     assert url.netloc == "growit.eu.auth0.com" and url.path == "/v2/logout"
     assert parse_qs(url.query)["returnTo"] == ["http://testserver/"]
+
+
+def _legacy_rows(store: Store) -> str:
+    """Rows written before sign-in existed: no owner, global voice and autopilot settings."""
+    run_id = store.create_run("old idea", ["x"])
+    store.add_topic("old topic", None)
+    store.set_setting("voice", {"brand": "Old Co", "compiled": "Brand: Old Co"})
+    store.set_setting("autopilot", {"enabled": True})
+    return run_id
+
+
+def test_an_admin_adopts_loops_made_before_sign_in(fake, monkeypatch):
+    monkeypatch.setenv("GROW_IT_ADMIN_EMAILS", "alice@example.com")
+    store = Store(":memory:")
+    run_id = _legacy_rows(store)
+    app = create_app(store, llm_factory=FakeLLM, autopilot=False)
+    bob = sign_in(app, "code-bob")
+    with bob:
+        assert bob.get("/api/runs").json() == []  # not an admin: adopts nothing
+    alice = sign_in(app, "code-alice")
+    with alice:
+        assert [r["id"] for r in alice.get("/api/runs").json()] == [run_id]
+        assert [t["source"] for t in alice.get("/api/autopilot").json()["topics"]] == ["old topic"]
+        assert "Old Co" in alice.get("/app/voice").text
+    assert store.get_setting("voice") is None and store.get_setting("autopilot") is None
+
+
+def test_the_password_owner_adopts_loops_made_before_sign_in(monkeypatch):
+    for name in ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "AUTH0_DOMAIN"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("GROW_IT_PASSWORD", "pw")
+    store = Store(":memory:")
+    run_id = _legacy_rows(store)
+    with TestClient(create_app(store, llm_factory=FakeLLM, autopilot=False)) as client:
+        client.post("/login", data={"password": "pw", "next": "/app"})
+        assert [r["id"] for r in client.get("/api/runs").json()] == [run_id]

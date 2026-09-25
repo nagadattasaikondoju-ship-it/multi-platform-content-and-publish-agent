@@ -92,6 +92,9 @@ def create_app(store: Store | None = None, llm_factory=GeminiLLM, autopilot: boo
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         task = None
+        if auth.mode() == "local":
+            store.ensure_user(auth.LOCAL_USER, "You")
+            store.adopt_unowned(auth.LOCAL_USER)
         if not service.serverless:
             # In-process work only exists on a long-running server.
             store.recover_interrupted()
@@ -169,6 +172,7 @@ def create_app(store: Store | None = None, llm_factory=GeminiLLM, autopilot: boo
         target = safe_next(str(form.get("next") or "/app"))
         if auth.mode() == "password" and hmac.compare_digest(str(form.get("password", "")), auth.password()):
             store.ensure_user(auth.OWNER_USER, "Owner")
+            store.adopt_unowned(auth.OWNER_USER)
             return session_response(target, auth.OWNER_USER)
         return RedirectResponse(f"/login?next={quote(target)}&error=1", status_code=303)
 
@@ -199,6 +203,8 @@ def create_app(store: Store | None = None, llm_factory=GeminiLLM, autopilot: boo
             return RedirectResponse("/login?error=signin", status_code=303)
         user = store.upsert_google_user(info["sub"], info.get("email", ""), info.get("name", ""),
                                         info.get("picture", ""))
+        if service.is_admin(user):
+            store.adopt_unowned(user["id"])
         response = session_response(safe_next(target), user["id"])
         response.delete_cookie(auth.STATE_COOKIE)
         return response
