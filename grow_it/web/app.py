@@ -2,6 +2,7 @@
 
 import asyncio
 import hmac
+import logging
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -23,6 +24,7 @@ from .service import LimitReached, Service, measure_post, normalise_field, provi
 from .store import Store, is_postgres_url
 
 HERE = Path(__file__).parent
+log = logging.getLogger("grow_it.web")
 templates = Jinja2Templates(directory=HERE / "templates")
 _macros = templates.env.get_template("macros.html").module
 templates.env.globals.update(
@@ -187,7 +189,8 @@ def create_app(store: Store | None = None, llm_factory=GeminiLLM, autopilot: boo
         if auth.provider() == "neon":
             try:
                 url, challenge = auth.neon_start(callback, base_url(request))
-            except Exception:
+            except Exception as e:
+                log.warning("Neon Auth sign-in could not start: %s", e)
                 return RedirectResponse("/login?error=signin", status_code=303)
             response = RedirectResponse(url, status_code=303)
             response.set_cookie(auth.NEON_CHALLENGE_COOKIE, challenge, httponly=True, max_age=900,
@@ -216,7 +219,8 @@ def create_app(store: Store | None = None, llm_factory=GeminiLLM, autopilot: boo
                 info = await asyncio.to_thread(
                     auth.fetch_user, code, f"{base_url(request)}{auth.callback_path()}"
                 )
-        except Exception:
+        except Exception as e:
+            log.warning("Sign-in callback failed: %s", e)
             return RedirectResponse("/login?error=signin", status_code=303)
         user = store.upsert_google_user(info["sub"], info.get("email", ""), info.get("name", ""),
                                         info.get("picture", ""))
