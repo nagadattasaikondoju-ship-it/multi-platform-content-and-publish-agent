@@ -14,6 +14,16 @@
           {{ "Continue with Google or email" if auth_provider == "auth0" else "Continue with Google" }}
         </a>
         <p class="muted" style="margin:18px 0 0;font-size:12.5px">We only read your name, email and profile photo. Your social accounts are connected separately, through each platform's own sign-in.</p>
+        {% if configured %}
+        <details style="margin-top:18px">
+          <summary class="muted" style="font-size:12.5px;cursor:pointer">Site owner sign-in</summary>
+          <form method="post" action="/login" style="margin-top:12px">
+            <input type="hidden" name="next" value="{{ next }}">
+            <label class="field"><span>Owner password</span><input class="input" type="password" name="password" required autocomplete="current-password"></label>
+            <button class="btn" style="width:100%" type="submit">Sign in as owner</button>
+          </form>
+        </details>
+        {% endif %}
       {% elif configured %}
         <h1 class="h-md" style="margin-bottom:6px">Sign in to the console</h1>
         <p class="muted" style="margin:0 0 22px">The console can publish to your accounts, so it is locked.</p>

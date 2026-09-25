@@ -303,3 +303,79 @@ def test_the_password_owner_adopts_loops_made_before_sign_in(monkeypatch):
     with TestClient(create_app(store, llm_factory=FakeLLM, autopilot=False)) as client:
         client.post("/login", data={"password": "pw", "next": "/app"})
         assert [r["id"] for r in client.get("/api/runs").json()] == [run_id]
+
+
+@pytest.fixture
+def neon_app(fake, monkeypatch):
+    """Neon Auth only: a fake upstream that behaves like the managed Better Auth API."""
+    import httpx
+
+    for name in ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "AUTH0_DOMAIN"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("NEON_AUTH_BASE_URL", "https://ep-test.neonauth.example/neondb/auth")
+    monkeypatch.setenv("GROW_IT_PASSWORD", "owner-pw")
+    calls = []
+
+    def post(url, json=None, headers=None, **_):
+        calls.append(("POST", url, json, headers))
+        return httpx.Response(
+            200, json={"url": "https://accounts.google.com/o/oauth2/auth?client_id=neon", "redirect": True},
+            headers=[("set-cookie", "__Secure-neon-auth.session_challenge=chal-1; Path=/; HttpOnly; Secure"),
+                     ("set-cookie", "other=ignored; Path=/")],
+            request=httpx.Request("POST", url),
+        )
+
+    def get(url, params=None, headers=None, **_):
+        calls.append(("GET", url, params, headers))
+        ok = params == {auth.NEON_VERIFIER_PARAM: "ver-1"} and \
+            headers.get("Cookie") == "__Secure-neon-auth.session_challenge=chal-1"
+        if not ok:
+            return httpx.Response(400, json={"error": "bad verifier"}, request=httpx.Request("GET", url))
+        return httpx.Response(200, request=httpx.Request("GET", url), json={
+            "session": {"id": "s1"},
+            "user": {"id": "nu1", "email": "erin@example.com", "name": "Erin", "image": None},
+        })
+
+    monkeypatch.setattr(auth.httpx, "post", post)
+    monkeypatch.setattr(auth.httpx, "get", get)
+    app = create_app(Store(":memory:"), llm_factory=FakeLLM, autopilot=False)
+    return app, calls
+
+
+def test_neon_auth_sign_in_round_trip(neon_app):
+    app, calls = neon_app
+    client = TestClient(app, base_url="https://grow.example")
+    with client:
+        assert "Continue with Google" in client.get("/login").text
+        start = client.get("/auth/login?next=/app/new", follow_redirects=False)
+        assert start.status_code == 303
+        assert start.headers["location"].startswith("https://accounts.google.com/")
+        method, url, body, headers = calls[0]
+        assert url == "https://ep-test.neonauth.example/neondb/auth/sign-in/social"
+        assert body == {"provider": "google", "callbackURL": "https://grow.example/auth/callback"}
+        assert headers["Origin"] == "https://grow.example"
+
+        back = client.get(f"/auth/callback?{auth.NEON_VERIFIER_PARAM}=ver-1", follow_redirects=False)
+        assert back.status_code == 303 and back.headers["location"] == "/app/new"
+        me = client.get("/app")
+        assert me.status_code == 200 and "Erin" in me.text
+
+
+def test_neon_auth_rejects_a_callback_without_the_challenge(neon_app):
+    app, _ = neon_app
+    client = TestClient(app, base_url="https://grow.example")
+    with client:
+        back = client.get(f"/auth/callback?{auth.NEON_VERIFIER_PARAM}=ver-1", follow_redirects=False)
+        assert back.headers["location"] == "/login?error=signin"
+        assert client.get("/app", follow_redirects=False).status_code == 303
+
+
+def test_owner_password_still_works_next_to_hosted_sign_in(neon_app):
+    app, _ = neon_app
+    client = TestClient(app, base_url="https://grow.example")
+    with client:
+        assert "Site owner sign-in" in client.get("/login").text
+        client.post("/login", data={"password": "wrong", "next": "/app"})
+        assert client.get("/app", follow_redirects=False).status_code == 303
+        client.post("/login", data={"password": "owner-pw", "next": "/app"})
+        assert client.get("/app").status_code == 200

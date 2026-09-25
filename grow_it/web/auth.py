@@ -1,4 +1,4 @@
-"""Who is signed in: Auth0 or Google sign-in for the public product, a password
+"""Who is signed in: Auth0, Google or Neon Auth sign-in for the public product, a password
 or a local user for single-owner setups. Sessions are HMAC-signed cookies."""
 
 import hashlib
@@ -27,12 +27,18 @@ def auth0_enabled() -> bool:
     return bool(os.getenv("AUTH0_DOMAIN") and os.getenv("AUTH0_CLIENT_ID") and os.getenv("AUTH0_CLIENT_SECRET"))
 
 
+def neon_enabled() -> bool:
+    return bool(os.getenv("NEON_AUTH_BASE_URL"))
+
+
 def provider() -> str | None:
-    """Which hosted sign-in is configured. Auth0 wins when both are."""
+    """Which hosted sign-in is configured: Auth0, then Google, then Neon Auth."""
     if auth0_enabled():
         return "auth0"
     if google_enabled():
         return "google"
+    if neon_enabled():
+        return "neon"
     return None
 
 
@@ -146,6 +152,56 @@ def auth0_logout_url(return_to: str) -> str:
     return _auth0_base() + "/v2/logout?" + urlencode(
         {"client_id": os.environ["AUTH0_CLIENT_ID"], "returnTo": return_to}
     )
+
+
+# --- Neon Auth (managed Better Auth, added with the Neon database on Vercel) ---------
+# The browser never talks to Neon Auth directly: this server asks it for the Google
+# sign-in link, keeps the "challenge" cookie it returns in our own cookie, and after
+# Google sends the person back with a one-time verifier, swaps both for the user.
+
+NEON_VERIFIER_PARAM = "neon_auth_session_verifier"
+NEON_CHALLENGE_COOKIE = "growit_neon_challenge"
+NEON_COOKIE_PREFIX = "__Secure-neon-auth"
+
+
+def _neon_base() -> str:
+    return os.environ["NEON_AUTH_BASE_URL"].rstrip("/")
+
+
+def _neon_headers(origin: str, cookie: str = "") -> dict:
+    headers = {"Origin": origin, "x-neon-auth-middleware": "true"}
+    if cookie:
+        headers["Cookie"] = cookie
+    return headers
+
+
+def neon_start(callback_url: str, origin: str) -> tuple[str, str]:
+    """Ask Neon Auth to start a Google sign-in. Returns (Google URL, challenge cookies)."""
+    response = httpx.post(_neon_base() + "/sign-in/social", timeout=20,
+                          json={"provider": "google", "callbackURL": callback_url},
+                          headers=_neon_headers(origin))
+    if response.status_code >= 400:
+        raise ValueError(f"Neon Auth refused the sign-in ({response.status_code}): {response.text[:200]}")
+    challenge = "; ".join(
+        f"{c.name}={c.value}" for c in response.cookies.jar if c.name.startswith(NEON_COOKIE_PREFIX)
+    )
+    url = response.json().get("url") or response.headers.get("location", "")
+    if not url or not challenge:
+        raise ValueError("Neon Auth did not return a sign-in link")
+    return url, challenge
+
+
+def neon_user(verifier: str, challenge: str, origin: str) -> dict:
+    """Swap the verifier (from the callback URL) and our stored challenge for the user."""
+    response = httpx.get(_neon_base() + "/get-session", timeout=20,
+                         params={NEON_VERIFIER_PARAM: verifier},
+                         headers=_neon_headers(origin, challenge))
+    response.raise_for_status()
+    user = (response.json() or {}).get("user") or {}
+    if not user.get("id"):
+        raise ValueError("Neon Auth returned no user")
+    return {"sub": f"neon|{user['id']}", "email": user.get("email", ""),
+            "name": user.get("name", ""), "picture": user.get("image") or ""}
 
 
 def login_url(redirect_uri: str, state: str) -> str:
