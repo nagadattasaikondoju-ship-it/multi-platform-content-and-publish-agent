@@ -544,3 +544,13 @@ dialog.modal::backdrop { background: rgba(16, 34, 42, 0.45); backdrop-filter: bl
 .run-title { font-size: clamp(24px, 2.6vw, 30px) !important; line-height: 1.2 !important; letter-spacing: -0.025em !important; }
 .run-side .panel + .panel { margin-top: 0; }
 .grid > .panel + .panel { margin-top: 0; }
+
+/* sign-in and accounts */
+.btn-google { width: 100%; background: #fff; color: #1f1f1f; border-color: #dadce0; font-weight: 600; }
+.btn-google:hover { background: #f8faff; border-color: #c6d4f0; }
+.connect-card.is-connected { border-color: var(--primary-60); box-shadow: inset 3px 0 0 var(--primary-60); }
+.avatar { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; background: var(--primary-20); display: inline-grid; place-items: center; font-family: var(--font-ui); font-weight: 700; font-size: 13px; color: var(--primary); flex: none; }
+.user-chip { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-ui); font-size: 13.5px; font-weight: 600; color: var(--on-surface); white-space: nowrap; }
+.user-chip span { max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+.chip.not-connected { opacity: 0.55; }
+@media (max-width: 760px) { .user-chip span { display: none; } }

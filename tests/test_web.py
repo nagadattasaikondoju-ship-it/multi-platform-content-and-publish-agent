@@ -1,4 +1,5 @@
 import time
+from urllib.parse import unquote
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -134,22 +135,22 @@ class TestSchedule:
     def service(self, **settings):
         store = Store(":memory:")
         svc = Service(store, FakeLLM)
-        svc.save_autopilot({"enabled": True, "time": "09:00", "utc_offset_minutes": 330, **settings})
+        svc.save_autopilot("u1", {"enabled": True, "time": "09:00", "utc_offset_minutes": 330, **settings})
         return svc
 
     def test_first_slot_is_today_if_not_passed(self):
         svc = self.service()
         now = datetime(2026, 10, 1, 2, 0, tzinfo=timezone.utc)  # 07:30 IST
-        assert svc.next_slot(svc.autopilot_settings(), now) == datetime(2026, 10, 1, 3, 30, tzinfo=timezone.utc)
+        assert svc.next_slot(svc.autopilot_settings("u1"), now) == datetime(2026, 10, 1, 3, 30, tzinfo=timezone.utc)
 
     def test_first_slot_moves_to_tomorrow_when_passed(self):
         svc = self.service()
         now = datetime(2026, 10, 1, 6, 0, tzinfo=timezone.utc)  # 11:30 IST
-        assert svc.next_slot(svc.autopilot_settings(), now) == datetime(2026, 10, 2, 3, 30, tzinfo=timezone.utc)
+        assert svc.next_slot(svc.autopilot_settings("u1"), now) == datetime(2026, 10, 2, 3, 30, tzinfo=timezone.utc)
 
     def test_every_n_days_after_a_run(self):
         svc = self.service(every_days=3)
-        settings = svc.autopilot_settings()
+        settings = svc.autopilot_settings("u1")
         settings["last_run_at"] = datetime(2026, 10, 1, 3, 30, tzinfo=timezone.utc).isoformat()
         now = datetime(2026, 10, 2, 6, 0, tzinfo=timezone.utc)
         assert svc.next_slot(settings, now) == datetime(2026, 10, 4, 3, 30, tzinfo=timezone.utc)
@@ -157,11 +158,11 @@ class TestSchedule:
     def test_tick_needs_enabled_due_and_a_topic(self):
         svc = self.service()
         due = datetime(2026, 10, 1, 3, 31, tzinfo=timezone.utc)
-        assert svc.autopilot_tick(due) is None  # empty queue
-        svc.save_autopilot({"enabled": False})
-        svc.store.add_topic("idea")
-        assert svc.autopilot_tick(due) is None  # disabled
-        assert svc.autopilot_tick(due - timedelta(hours=2)) is None
+        assert svc.autopilot_tick("u1", due) is None  # empty queue
+        svc.save_autopilot("u1", {"enabled": False})
+        svc.store.add_topic("idea", "u1")
+        assert svc.autopilot_tick("u1", due) is None  # disabled
+        assert svc.autopilot_tick("u1", due - timedelta(hours=2)) is None
 
 
 def test_interrupted_runs_are_marked_failed_on_startup():
@@ -208,7 +209,7 @@ def test_password_locks_console_and_api(monkeypatch):
     with make_client(monkeypatch) as c:
         assert c.get("/").status_code == 200  # marketing stays public
         r = c.get("/app/new?source=hi", follow_redirects=False)
-        assert r.status_code == 303 and r.headers["location"] == "/login?next=/app/new?source=hi"
+        assert r.status_code == 303 and unquote(r.headers["location"]) == "/login?next=/app/new?source=hi"
         assert c.get("/api/runs").status_code == 401
         assert c.post("/start", data={"source": "x"}, follow_redirects=False).headers["location"].startswith("/login")
 
@@ -234,20 +235,20 @@ def test_cron_requires_secret(monkeypatch):
         assert c.get("/api/cron/autopilot").status_code == 401
         monkeypatch.setenv("CRON_SECRET", "abc")
         assert c.get("/api/cron/autopilot", headers={"Authorization": "Bearer wrong"}).status_code == 401
-        assert c.get("/api/cron/autopilot", headers={"Authorization": "Bearer abc"}).json() == {"started": None}
+        assert c.get("/api/cron/autopilot", headers={"Authorization": "Bearer abc"}).json() == {"started": []}
 
 
 def test_cron_runs_a_due_autopilot_loop_to_completion(monkeypatch):
     monkeypatch.setenv("CRON_SECRET", "abc")
     with make_client(monkeypatch, serverless=True) as c:
         service = c.app.state.service
-        service.save_autopilot({"enabled": True, "time": "00:00", "utc_offset_minutes": 0,
-                                "platforms": ["bluesky"]})
-        settings = service.autopilot_settings()
+        service.save_autopilot("local", {"enabled": True, "time": "00:00", "utc_offset_minutes": 0,
+                                         "platforms": ["bluesky"]})
+        settings = service.autopilot_settings("local")
         settings["last_run_at"] = "2020-01-01T00:00:00+00:00"
-        service.store.set_setting("autopilot", settings)
-        service.store.add_topic("Queued idea")
-        started = c.get("/api/cron/autopilot", headers={"Authorization": "Bearer abc"}).json()["started"]
+        service.store.set_setting("autopilot:local", settings)
+        service.store.add_topic("Queued idea", "local")
+        [started] = c.get("/api/cron/autopilot", headers={"Authorization": "Bearer abc"}).json()["started"]
         run = c.get(f"/api/runs/{started}").json()
         assert run["status"] == "ready" and run["origin"] == "autopilot"
 
