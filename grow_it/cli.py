@@ -103,6 +103,30 @@ def cmd_publish(args) -> int:
     return 0
 
 
+def cmd_video(args) -> int:
+    from . import video
+    from .models import GeneratedPost
+
+    data = json.loads(Path(args.run_file).read_text())
+    results = [GeneratedPost.model_validate(p) for p in data["posts"]]
+    wanted = set(args.platforms.split(",")) if args.platforms else set(video.PLATFORM_ASPECT_RATIO)
+
+    made = {}
+    for r in results:
+        key = r.post.platform
+        if key not in wanted:
+            continue
+        result = video.generate_video(r.post, wait=not args.no_wait, dry_run=not args.live)
+        made[key] = result
+        print(key, json.dumps(result, ensure_ascii=False))
+
+    if args.live and made:
+        out_path = Path(args.run_file).with_name(Path(args.run_file).stem + "-videos.json")
+        out_path.write_text(json.dumps(made, indent=2, ensure_ascii=False))
+        print(f"Wrote video results to {out_path}")
+    return 0
+
+
 def cmd_accounts(args) -> int:
     from . import zernio
 
@@ -158,6 +182,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     pub.add_argument("--live", action="store_true", help="Actually post (default is dry-run)")
     pub.set_defaults(func=cmd_publish)
+
+    vid = sub.add_parser("video", help="Generate short videos for a run via TopView")
+    vid.add_argument("run_file")
+    vid.add_argument("--platforms", help="Comma-separated keys; default is every video platform")
+    vid.add_argument("--no-wait", action="store_true", help="Submit only; don't poll for completion")
+    vid.add_argument("--live", action="store_true", help="Actually call TopView (default is dry-run)")
+    vid.set_defaults(func=cmd_video)
 
     serve = sub.add_parser("serve", help="Run the Grow it website and console")
     serve.add_argument("--host", default="127.0.0.1")
