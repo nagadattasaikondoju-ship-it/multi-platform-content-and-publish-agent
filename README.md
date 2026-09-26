@@ -138,9 +138,14 @@ grow-it publish runs/run-20261001-090000.json
 
 # Actually schedule them
 grow-it publish runs/run-20261001-090000.json --schedule 2026-10-01T09:00:00+05:30 --live
+
+# Generate short videos (TikTok, YouTube Shorts, Instagram, Snapchat, Pinterest) via TopView
+grow-it video runs/run-20261001-090000.json --live
 ```
 
 Posts flagged `needs_review` are skipped at publish time unless you pass `--include-flagged`.
+
+`video` calls [TopView](https://www.topview.ai)'s text-to-video API with each post's `script` (falling back to `media_prompt`, then the body) and polls until the videos are ready, writing the results (including each video's `filePath` URL) to `<run>-videos.json`. Feed those URLs into `grow-it publish` as `media_urls` to attach the finished video. Dry-run by default; needs `TOPVIEW_API_KEY` and `TOPVIEW_UID` for `--live`.
 
 `publish` uses Zernio when `ZERNIO_API_KEY` is set, otherwise Ayrshare; force one with `--provider zernio|ayrshare`. With Zernio, each post goes to the first active account connected for that platform, and platforms with no connected account are skipped. TikTok posts go to the creator's TikTok inbox (draft) by default, because TikTok requires the creator to confirm before direct publishing. A Google Business call-to-action button is only added when a URL is supplied.
 
@@ -155,6 +160,7 @@ The CLI reads a `.env` file in the current directory automatically (it never ove
 | `GROW_IT_FALLBACK_MODELS` | comma-separated models tried when the main one is overloaded or rate-limited |
 | `ZERNIO_API_KEY` | `publish --live` and `accounts` via [Zernio](https://zernio.com) |
 | `AYRSHARE_API_KEY` | `publish --live --provider ayrshare` |
+| `TOPVIEW_API_KEY` / `TOPVIEW_UID` | `video --live` via [TopView](https://www.topview.ai) |
 
 Never commit API keys, access tokens, or credentials to the repository.
 
@@ -171,6 +177,7 @@ grow_it/
 ├── validate.py             # deterministic compliance checks + force_fit
 ├── publish.py              # Ayrshare payloads, dry-run by default
 ├── zernio.py               # Zernio accounts + payloads, dry-run by default
+├── video.py                # TopView text-to-video, dry-run by default
 ├── cli.py                  # `grow-it` command (generate, publish, accounts, serve)
 └── web/
     ├── app.py              # FastAPI routes: pages + JSON API
@@ -187,7 +194,8 @@ tests/                      # run with `pytest` (no API keys needed)
 - [x] Rules for all 13 platforms
 - [x] Gemini generation with validate-and-repair loop
 - [x] Publishing and scheduling through Zernio or Ayrshare (dry-run by default)
-- [ ] Media generation: images (Gemini image), carousels, short videos (Remotion)
+- [x] Short-video generation via TopView's text-to-video API
+- [ ] Media generation: images (Gemini image), carousels
 - [ ] Niche research: scrape top-performing posts to inform the brief
 - [x] Website and review console (FastAPI + Jinja)
 - [x] Autopilot: idea queue on a schedule, review or publish mode
