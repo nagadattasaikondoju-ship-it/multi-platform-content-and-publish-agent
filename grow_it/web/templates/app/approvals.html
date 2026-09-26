@@ -1,0 +1,31 @@
+{% extends "app/base.html" %}
+{% block page_title %}Approvals{% endblock %}
+{% block main %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Approvals</p>
+    <h1 class="h-lg">Waiting for a decision</h1>
+    <p>Briefs to sign off and posts to approve. Nothing is published until you say so.</p>
+  </div>
+</div>
+
+<section class="panel" aria-labelledby="briefsTitle">
+  <h2 class="panel-title" id="briefsTitle">Briefs to review</h2>
+  {% if o.reviewing %}
+  <ul class="list">{% for r in o.reviewing %}<li><a href="/app/runs/{{ r.id }}"><span class="status s-review">brief</span><span class="list-main">{{ run_title(r) }}</span><time class="list-time" datetime="{{ r.created_at }}" data-local>{{ r.created_at }}</time></a></li>{% endfor %}</ul>
+  {% else %}<p class="muted empty-line">No briefs waiting. When you create a loop, its evidence and brief come here for sign-off before posts are written.</p>{% endif %}
+</section>
+
+<section class="panel" aria-labelledby="postsTitle">
+  <h2 class="panel-title" id="postsTitle">Posts to approve</h2>
+  {% if o.pending %}
+  <ul class="list">{% for p in o.pending %}<li><a href="/app/runs/{{ p.run_id }}#post-{{ p.platform }}"><span class="status s-draft">{{ p.label }}</span><span class="list-main">{{ p.title }}</span>{% if p.errors %}<span class="status s-failed">{{ p.errors|length }} issue{{ "s" if p.errors|length > 1 }}</span>{% endif %}</a></li>{% endfor %}</ul>
+  {% if nav_counts.approvals > o.pending|length + o.reviewing|length %}<p class="muted" style="margin:12px 0 0;font-size:13.5px">Showing the most recent. Open a loop to approve the rest.</p>{% endif %}
+  {% else %}<p class="muted empty-line">All caught up.</p>{% endif %}
+</section>
+
+<section class="panel soon-panel" aria-labelledby="teamTitle">
+  <h2 class="panel-title" id="teamTitle">{{ icon("team", 18) }} Team and client approvals</h2>
+  <p class="muted" style="margin:0">Reviewers, client sign-off, comments and change requests are coming with Team. For now, you approve your own posts.</p>
+</section>
+{% endblock %}

@@ -1,21 +1,34 @@
 {% extends "app/base.html" %}
-{% block page_title %}Brand voice{% endblock %}
+{% block page_title %}Brand Kit{% endblock %}
 {% block main %}
 <div class="page-head">
   <div>
-    <p class="eyebrow">Brand voice</p>
-    <h1 class="h-lg">How should you sound?</h1>
-    <p>Added to every brief, so all thirteen posts share one voice. Keep it short and concrete.</p>
+    <p class="eyebrow">Brand Kit</p>
+    <h1 class="h-lg">How you sound</h1>
+    <p>Used in every brief, so every post shares one voice. Short and concrete works best.</p>
   </div>
 </div>
-<form id="voiceForm" class="panel" style="max-width:760px">
-  <label class="field"><span>Brand or name</span><input class="input" name="brand" value="{{ voice.brand or '' }}" placeholder="e.g. Grow it"></label>
-  <label class="field"><span>Who you are talking to</span><input class="input" name="audience" value="{{ voice.audience or '' }}" placeholder="e.g. Founders of small service businesses in India"></label>
-  <label class="field"><span>Voice notes</span>
-    <textarea class="input" name="notes" rows="8" placeholder="Tone: warm, direct, a little dry.&#10;Always: short sentences, one idea per post.&#10;Never: 'game-changer', 'unlock', exclamation marks.&#10;Example we like: 'We shipped it on a Tuesday. Nobody noticed. That was the point.'">{{ voice.notes or '' }}</textarea>
-    <small>Tone, words to use or avoid, and one or two example lines you like.</small>
-  </label>
-  <div class="row end"><button class="btn btn-primary" type="submit">Save voice</button></div>
+<form id="voiceForm" class="brand-form" novalidate>
+  <section class="panel">
+    <h2 class="panel-title">Identity</h2>
+    <label class="field"><span>Brand or name</span><input class="input" name="brand" maxlength="200" value="{{ voice.brand or '' }}" placeholder="e.g. Grow it"><small>Also names your workspace.</small></label>
+    <label class="field"><span>Who you're talking to</span><input class="input" name="audience" maxlength="500" value="{{ voice.audience or '' }}" placeholder="e.g. Founders of small service businesses in India"></label>
+  </section>
+  <section class="panel">
+    <h2 class="panel-title">Voice</h2>
+    <label class="field"><span>Tone</span><input class="input" name="tone" maxlength="300" value="{{ voice.tone or '' }}" placeholder="e.g. Warm, direct, a little dry"></label>
+    <label class="field"><span>Words and phrases you use</span><input class="input" name="always" maxlength="1000" value="{{ voice.always or '' }}" placeholder="e.g. customers (not users), ship, small bets"></label>
+    <label class="field"><span>Never use</span><input class="input" name="avoid" maxlength="1000" value="{{ voice.avoid or '' }}" placeholder="e.g. game-changer, unlock, synergy"><small>Comma separated. Posts that contain these are flagged and can't be approved until fixed.</small></label>
+  </section>
+  <section class="panel">
+    <h2 class="panel-title">Defaults</h2>
+    <label class="field"><span>Default call to action</span><input class="input" name="default_cta" maxlength="300" value="{{ voice.default_cta or '' }}" placeholder="e.g. Book a 15-minute call"></label>
+    <label class="field"><span>Brand hashtags</span><input class="input" name="hashtags" maxlength="500" value="{{ voice.hashtags or '' }}" placeholder="e.g. growit, buildinpublic"></label>
+    <label class="field"><span>Anything else</span>
+      <textarea class="input" name="notes" rows="5" maxlength="4000" placeholder="One or two example lines you like, or rules like 'one idea per post'.">{{ voice.notes or '' }}</textarea>
+    </label>
+  </section>
+  <div class="row end"><button class="btn btn-primary" type="submit" id="saveVoice">Save Brand Kit</button></div>
 </form>
 {% endblock %}
 {% block scripts %}
@@ -23,10 +36,14 @@
   const vf = document.getElementById("voiceForm");
   vf.addEventListener("submit", async (e) => {
     e.preventDefault();
+    const btn = document.getElementById("saveVoice");
+    btn.disabled = true;
+    const body = Object.fromEntries(["brand", "audience", "tone", "always", "avoid", "default_cta", "hashtags", "notes"].map((k) => [k, vf[k].value]));
     try {
-      await Grow.api("PUT", "/api/voice", { brand: vf.brand.value, audience: vf.audience.value, notes: vf.notes.value });
-      Grow.toast("Voice saved — new loops will use it");
+      await Grow.api("PUT", "/api/voice", body);
+      Grow.toast("Brand Kit saved — new loops will use it");
     } catch (err) { Grow.toast(err.message, "error"); }
+    finally { btn.disabled = false; }
   });
 </script>
 {% endblock %}

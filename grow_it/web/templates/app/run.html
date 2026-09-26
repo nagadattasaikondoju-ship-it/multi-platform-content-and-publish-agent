@@ -1,10 +1,10 @@
 {% extends "app/base.html" %}
-{% block page_title %}Loop{% endblock %}
+{% block page_title %}Posts{% endblock %}
 {% block main %}
 <div class="page-head">
   <div style="min-width:0">
     <p class="eyebrow">Loop · <time datetime="{{ run.created_at }}" data-local>{{ run.created_at }}</time>{% if run.origin == "autopilot" %} · autopilot{% endif %}</p>
-    <h1 class="h-lg run-title" style="overflow-wrap:anywhere">{{ run.source|truncate(140) }}</h1>
+    <h1 class="h-lg run-title" style="overflow-wrap:anywhere">{{ title|truncate(140) }}</h1>
   </div>
   <div class="row">
     <a class="btn btn-quiet btn-sm" href="/app/runs/{{ run.id }}/report">{{ icon("report", 16) }} Report</a>
@@ -12,6 +12,14 @@
   </div>
 </div>
 
+{% if run.evidence or run.origin != "autopilot" %}
+<ol class="stepper" aria-label="Loop steps">
+  <li class="done"><b>1</b> Source</li>
+  <li class="{{ 'done' if run.evidence else '' }}"><b>2</b> Evidence &amp; brief</li>
+  <li class="current" aria-current="step"><b>3</b> Posts</li>
+  <li><b>4</b> Publish</li>
+</ol>
+{% endif %}
 <div class="run-layout">
   <section class="posts" id="posts" aria-live="polite"></section>
 
@@ -40,7 +48,7 @@
       <p class="muted" style="margin:0 0 18px;font-size:14px">{{ "Posts go to the accounts you connected on the Accounts page." if provider != "none" else "Publishing isn't switched on for this site yet — you can still preview." }} Posts with open problems can't be sent.</p>
       <div class="field-label" style="margin-bottom:8px">Posts</div>
       <div class="chip-row" id="publishPlatforms" style="margin-bottom:10px"></div>
-      <p class="muted" id="connectHint" style="margin:0 0 18px;font-size:13px" hidden>Faded platforms aren't connected yet — <a href="/app/connections">connect them here</a>. Previews still work.</p>
+      <p class="muted" id="connectHint" style="margin:0 0 18px;font-size:13px" hidden>Faded platforms aren't connected yet — <a href="/app/integrations">connect them here</a>. Previews still work.</p>
       <div class="field-label" style="margin-bottom:8px">When</div>
       <label class="radio-card"><input type="radio" name="when" value="now" checked><div><b>Now</b><span>Sent as soon as you confirm.</span></div></label>
       <label class="radio-card"><input type="radio" name="when" value="later"><div style="flex:1"><b>Schedule</b><span>Pick a time in your timezone.</span>
@@ -134,11 +142,13 @@ function drawBrief() {
   document.getElementById("brief").innerHTML = `
     <p style="margin:10px 0 0;font-weight:600">${Grow.escape(b.thesis)}</p>
     <p class="muted" style="margin:6px 0 0;font-size:13.5px">For ${Grow.escape(b.audience)}</p>
-    <details class="more" style="margin-top:12px"><summary>Key points, hooks and facts</summary>
+    <details class="more" style="margin-top:12px"><summary>Key points, hooks and approved facts</summary>
       <div class="label" style="margin-top:4px">Key points</div>${list(b.key_points)}
       <div class="label" style="margin-top:12px">Hooks</div>${list(b.hooks)}
-      <div class="label" style="margin-top:12px">Facts from your source</div>${list(b.facts) || '<p class="muted" style="font-size:13.5px;margin:6px 0 0">None — so no numbers will appear in posts.</p>'}
+      <div class="label" style="margin-top:12px">Approved facts</div>${list(b.facts) || '<p class="muted" style="font-size:13.5px;margin:6px 0 0">None — posts are opinion-led, with no numbers or claims stated as fact.</p>'}
       <div class="label" style="margin-top:12px">Call to action</div><p style="margin:6px 0 0;font-size:14px">${Grow.escape(b.cta)}</p>
+      ${b.tone || b.style ? `<div class="label" style="margin-top:12px">Style and tone</div><p style="margin:6px 0 0;font-size:14px">${Grow.escape([b.style, b.tone].filter(Boolean).join(" · "))}</p>` : ""}
+      ${b.prohibited && b.prohibited.length ? `<div class="label" style="margin-top:12px">Never use</div><p style="margin:6px 0 0;font-size:14px">${Grow.escape(b.prohibited.join(", "))}</p>` : ""}
     </details>`;
 }
 
@@ -175,8 +185,11 @@ function drawPost(post) {
     card.className = "post-card";
     postsEl.appendChild(card);
   }
-  if (rendered[key] === post.updated_at || dirty.has(key)) return;
-  rendered[key] = post.updated_at;
+  // updated_at has one-second resolution, so include the status: a post can go from
+  // generating to draft within the same second.
+  const version = `${post.updated_at}|${post.status}|${post.attempts}`;
+  if (rendered[key] === version || dirty.has(key)) return;
+  rendered[key] = version;
   card.className = `post-card is-${post.status}`;
 
   const head = `<div class="post-head">${Grow.badge(spec)}<h3>${Grow.escape(spec.label)}</h3>

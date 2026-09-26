@@ -1,0 +1,109 @@
+{% extends "app/base.html" %}
+{% block page_title %}Home{% endblock %}
+{% block main %}
+{% set first = "" if not user or user.id == "local" else (user.name or "").split(" ")[0] %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">{{ workspace_name }}</p>
+    <h1 class="h-lg"><span data-greeting>Welcome back</span>{% if first %}, {{ first }}{% endif %}</h1>
+  </div>
+  <a class="btn btn-primary" href="/app/new">{{ icon("plus", 18) }} Create a loop</a>
+</div>
+
+<section class="nba tone-{{ o.next.tone }}" aria-labelledby="nbaTitle">
+  <div class="nba-icon">{{ icon("alert" if o.next.tone in ("error", "warn") else "sparkle", 22) }}</div>
+  <div class="nba-text">
+    <p class="eyebrow" style="margin:0 0 4px">Next best action</p>
+    <h2 class="h-sm" id="nbaTitle">{{ o.next.title }}</h2>
+    <p>{{ o.next.body }}</p>
+  </div>
+  <a class="btn {{ 'btn-secondary' if o.next.tone != 'error' else 'btn-primary' }}" href="{{ o.next.url }}">{{ o.next.cta }} {{ icon("arrow", 16) }}</a>
+</section>
+
+{% if not o.recent %}
+<section class="panel onboard">
+  <h2 class="h-sm">How a loop works</h2>
+  <ol class="steps-mini">
+    <li><b>Give it a source</b><span>An idea, a draft, an article, a link or a document.</span></li>
+    <li><b>Check the evidence</b><span>Grow it pulls out the facts, with the exact words they came from. You approve what can be used.</span></li>
+    <li><b>Edit the brief</b><span>Audience, angle, tone, calls to action and words to avoid.</span></li>
+    <li><b>Review every post</b><span>One per platform, checked against its limits. Edit, rewrite, approve.</span></li>
+    <li><b>Publish or schedule</b><span>To accounts you connect, or preview first.</span></li>
+  </ol>
+</section>
+{% endif %}
+
+<div class="home-grid">
+  <section class="panel" aria-labelledby="weekTitle">
+    <div class="spread"><h2 class="panel-title" id="weekTitle">This week</h2><a class="btn-link" href="/app/calendar">Calendar</a></div>
+    <div class="mini-stats">
+      <div><b>{{ o.week.written }}</b><span>Written</span></div>
+      <div><b>{{ o.week.approved }}</b><span>Approved</span></div>
+      <div><b>{{ o.week.scheduled }}</b><span>Scheduled</span></div>
+      <div><b>{{ o.week.published }}</b><span>Published</span></div>
+    </div>
+  </section>
+  <section class="panel" aria-labelledby="consTitle">
+    <h2 class="panel-title" id="consTitle">Consistency</h2>
+    <div class="consistency">
+      <div class="ring" style="--p:{{ o.consistency.score }}" role="img" aria-label="{{ o.consistency.score }} percent">{{ o.consistency.score }}%</div>
+      <p class="muted">Posts went out on {{ o.consistency.active_days }} of the last {{ o.consistency.days }} days.
+        {% if o.consistency.score < 30 %}A steady rhythm beats bursts — schedule a few days ahead.{% else %}Keep it up.{% endif %}</p>
+    </div>
+  </section>
+</div>
+
+<div class="home-grid">
+  <section class="panel" aria-labelledby="pendTitle">
+    <div class="spread"><h2 class="panel-title" id="pendTitle">Waiting for you</h2><a class="btn-link" href="/app/approvals">All approvals</a></div>
+    {% if o.reviewing or o.pending %}
+    <ul class="list">
+      {% for r in o.reviewing %}<li><a href="/app/runs/{{ r.id }}"><span class="status s-review">brief</span><span class="list-main">{{ run_title(r) }}</span></a></li>{% endfor %}
+      {% for p in o.pending %}<li><a href="/app/runs/{{ p.run_id }}#post-{{ p.platform }}"><span class="status s-draft">{{ p.label }}</span><span class="list-main">{{ p.title }}</span></a></li>{% endfor %}
+    </ul>
+    {% else %}<p class="muted empty-line">Nothing to approve. New posts land here after a loop is written.</p>{% endif %}
+  </section>
+  <section class="panel" aria-labelledby="schedTitle">
+    <div class="spread"><h2 class="panel-title" id="schedTitle">Scheduled</h2><a class="btn-link" href="/app/calendar">Calendar</a></div>
+    {% if o.upcoming %}
+    <ul class="list">
+      {% for p in o.upcoming %}<li><a href="/app/runs/{{ p.run_id }}"><time class="list-time" datetime="{{ p.schedule_at }}" data-local>{{ p.schedule_at }}</time><span class="list-main">{{ p.label }} · {{ p.title }}</span></a></li>{% endfor %}
+    </ul>
+    {% else %}<p class="muted empty-line">Nothing scheduled. Approve posts in a loop, then choose <b>Schedule</b> when you publish.</p>{% endif %}
+  </section>
+</div>
+
+{% if o.failed %}
+<section class="panel attention" aria-labelledby="failTitle">
+  <h2 class="panel-title" id="failTitle">{{ icon("alert", 18) }} Needs attention</h2>
+  <ul class="list">
+    {% for p in o.failed %}<li><a href="/app/runs/{{ p.run_id }}#post-{{ p.platform }}"><span class="status s-failed">{{ p.label }}</span><span class="list-main">{{ (p.errors or ["Failed"])[0] }} — {{ p.title }}</span></a></li>{% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<div class="home-grid">
+  <section class="panel" aria-labelledby="recentTitle">
+    <div class="spread"><h2 class="panel-title" id="recentTitle">Recent loops</h2><a class="btn-link" href="/app/library">Content Library</a></div>
+    {% if o.recent %}
+    <ul class="list">
+      {% for r in o.recent %}<li><a href="/app/runs/{{ r.id }}">{{ status(r.status) }}<span class="list-main">{{ run_title(r) }}</span></a></li>{% endfor %}
+    </ul>
+    {% else %}<p class="muted empty-line">Your loops will show up here.</p>{% endif %}
+  </section>
+  <section class="panel" aria-labelledby="perfTitle">
+    <h2 class="panel-title" id="perfTitle">Performance</h2>
+    <p class="muted empty-line">{% if o.has_published %}Engagement numbers for published posts arrive with Analytics, which is next on the roadmap.{% else %}Once posts are published, their reach and engagement will appear here so you can see which topics and formats work.{% endif %}</p>
+    <div class="row" style="gap:8px">
+      <span class="chip-static">Autopilot {{ "on" if autopilot.enabled else "off" }}</span>
+      <a class="btn-link" href="/app/autopilot">{{ "Manage" if autopilot.enabled else "Set up autopilot" }}</a>
+    </div>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  const h = new Date().getHours();
+  document.querySelector("[data-greeting]").textContent = h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+</script>
+{% endblock %}

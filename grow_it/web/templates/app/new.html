@@ -1,63 +1,218 @@
 {% extends "app/base.html" %}
-{% block page_title %}New loop{% endblock %}
+{% block page_title %}Create{% endblock %}
 {% block main %}
 <div class="page-head">
   <div>
-    <p class="eyebrow">New loop</p>
-    <h1 class="h-lg">What should the loop write about?</h1>
-    <p>A topic, a rough draft, a full article, or a link. The more you give it, the more specific the posts.</p>
+    <p class="eyebrow">Create a loop</p>
+    <h1 class="h-lg">Start from a source</h1>
+    <p>Give Grow it something to work from. Next you'll check the facts it found and edit the brief, before any post is written.</p>
   </div>
 </div>
-<form id="newForm" class="grid" style="grid-template-columns:minmax(0,1fr) 320px;gap:24px;align-items:start">
-  <div class="panel">
-    <label class="field"><span>Your idea</span>
-      <textarea class="input" name="source" id="source" rows="9" required placeholder="e.g. We just launched same-day delivery in Hyderabad — here's why it took us two years…">{{ source }}</textarea>
-      <small>Links are fetched and read. Numbers in your posts only come from what you paste here.</small>
-    </label>
-    <div class="field-label" style="margin-bottom:8px">Try one</div>
-    <div class="chip-row">
-      {% for idea in ["Five lessons from our first 100 customers", "Why we stopped posting every day — and grew faster", "A beginner's guide to cold brew at home"] %}
-      <button type="button" class="chip" data-idea="{{ idea }}" style="padding:6px 12px">{{ idea }}</button>
+
+<ol class="stepper" aria-label="Loop steps">
+  <li class="current" aria-current="step"><b>1</b> Source</li>
+  <li><b>2</b> Evidence &amp; brief</li>
+  <li><b>3</b> Posts</li>
+  <li><b>4</b> Publish</li>
+</ol>
+
+<form id="newForm" class="create-layout" novalidate>
+  <section class="panel" aria-labelledby="srcTitle">
+    <h2 class="panel-title" id="srcTitle">Source</h2>
+    <div class="seg" role="tablist" aria-label="Source type">
+      {% for key, label, ic in [("idea", "Quick idea", "sparkle"), ("draft", "Draft", "write"), ("article", "Article", "source"), ("url", "Web page", "link"), ("document", "Document", "upload"), ("reuse", "Past loop", "loop")] %}
+      <button type="button" role="tab" class="seg-btn" id="tab-{{ key }}" data-type="{{ key }}" aria-selected="{{ 'true' if loop.first else 'false' }}" aria-controls="pane">{{ icon(ic, 16) }}<span>{{ label }}</span></button>
       {% endfor %}
     </div>
-  </div>
-  <div class="panel">
-    <div class="spread" style="margin-bottom:12px">
-      <span class="panel-title">Platforms</span>
-      <span class="row" style="gap:10px"><button type="button" class="btn-link" data-all="1">All</button><button type="button" class="btn-link" data-all="0">None</button></span>
+
+    <div id="pane" role="tabpanel" aria-labelledby="tab-idea">
+      <div data-show="url" hidden>
+        <label class="field"><span>Web page address</span>
+          <input class="input" type="url" name="url" id="url" placeholder="https://example.com/blog/post" aria-describedby="urlErr">
+          <small>We read the article text from the page. Paywalled or script-only pages may not work — paste the text instead.</small>
+          <small class="field-error" id="urlErr" hidden></small>
+        </label>
+      </div>
+      <div data-show="document" hidden>
+        <label class="field"><span>Document</span>
+          <input class="input" type="file" id="file" accept=".txt,.md,.markdown,.html,.htm,.csv,text/plain,text/markdown,text/html" aria-describedby="fileHelp fileErr">
+          <small id="fileHelp">Text, Markdown or HTML, up to 1&nbsp;MB. PDF and Word support is coming soon — for now, copy the text into <b>Article</b>.</small>
+          <small class="field-error" id="fileErr" hidden></small>
+        </label>
+      </div>
+      <div data-show="reuse" hidden>
+        <label class="field"><span>Loop to reuse</span>
+          <select class="input" id="reuseSelect" aria-describedby="reuseHelp">
+            <option value="">Choose a past loop…</option>
+            {% for r in past %}<option value="{{ r.id }}"{{ " selected" if r.id == reuse }}>{{ r.title }}</option>{% endfor %}
+          </select>
+          <small id="reuseHelp">{% if past %}Its source is copied below so you can take a new angle on it.{% else %}You have no past loops yet.{% endif %}</small>
+        </label>
+      </div>
+      <label class="field" data-show="draft article url document reuse" hidden><span>Title <em class="opt">optional</em></span>
+        <input class="input" name="title" maxlength="200" placeholder="A short working title"></label>
+      <label class="field" data-hide="url"><span id="bodyLabel">Your idea</span>
+        <textarea class="input" name="source" id="source" rows="9" maxlength="200000" aria-describedby="sourceHelp sourceErr" placeholder="e.g. We just launched same-day delivery in Hyderabad — here's why it took us two years…">{{ source }}</textarea>
+        <span class="spread"><small id="sourceHelp">Numbers and claims in your posts only come from what's here.</small><small class="count" id="sourceCount" aria-live="polite">0</small></span>
+        <small class="field-error" id="sourceErr" hidden></small>
+      </label>
+      <div class="grid-2 compact" data-show="article url document" hidden>
+        <label class="field"><span>Author <em class="opt">optional</em></span><input class="input" name="author" maxlength="200"></label>
+        <label class="field"><span>Published <em class="opt">optional</em></span><input class="input" type="date" name="source_date"></label>
+      </div>
+      <div data-show="idea">
+        <div class="field-label" style="margin-bottom:8px">Try one</div>
+        <div class="chip-row">
+          {% for idea in ["Five lessons from our first 100 customers", "Why we stopped posting every day — and grew faster", "A beginner's guide to cold brew at home"] %}
+          <button type="button" class="chip" data-idea="{{ idea }}" style="padding:6px 12px">{{ idea }}</button>
+          {% endfor %}
+        </div>
+      </div>
     </div>
-    <div class="chip-row" style="margin-bottom:20px">
-      {% for p in platforms %}
-      <label class="chip"><input type="checkbox" name="platforms" value="{{ p.key }}" checked>{{ pbadge(p) }}{{ p.label }}</label>
-      {% endfor %}
-    </div>
-    <div class="note" style="margin-bottom:18px;font-size:13.5px">
-      {% if voice.compiled %}Writing in your brand voice{% if voice.brand %} for <b>{{ voice.brand }}</b>{% endif %}. <a href="/app/voice">Edit</a>{% else %}No brand voice yet — posts will use a neutral tone. <a href="/app/voice">Add one</a>{% endif %}
-    </div>
-    <button class="btn btn-primary" style="width:100%" type="submit" id="startBtn">Start the loop {{ icon("arrow", 18) }}</button>
-  </div>
+  </section>
+
+  <aside class="create-side">
+    <section class="panel" aria-labelledby="ctxTitle">
+      <h2 class="panel-title" id="ctxTitle">Context</h2>
+      <label class="field"><span>Objective</span>
+        <select class="input" name="objective"><option value="">Choose one…</option>{% for o in objectives %}<option>{{ o }}</option>{% endfor %}</select></label>
+      <label class="field"><span>Primary audience</span><input class="input" name="audience" maxlength="300" value="{{ voice.audience or '' }}" placeholder="e.g. Founders of B2B SaaS startups"></label>
+      <label class="field"><span>Call to action</span><input class="input" name="cta" maxlength="300" value="{{ voice.default_cta or '' }}" placeholder="e.g. Book a demo"></label>
+      <label class="field"><span>Content style</span>
+        <select class="input" name="style">{% for st in styles %}<option{{ " selected" if st == "Educational" }}>{{ st }}</option>{% endfor %}</select></label>
+      <label class="field"><span>Campaign <em class="opt">optional</em></span><input class="input" name="campaign" maxlength="200" placeholder="e.g. Q3 launch"></label>
+      <div class="note" style="font-size:13.5px">
+        {% if voice.compiled %}Using your Brand Kit{% if voice.brand %} for <b>{{ voice.brand }}</b>{% endif %}. <a href="/app/brand">Edit</a>{% else %}No Brand Kit yet — posts will use a neutral voice. <a href="/app/brand">Set one up</a>{% endif %}
+      </div>
+    </section>
+    <section class="panel" aria-labelledby="platTitle">
+      <div class="spread" style="margin-bottom:12px">
+        <h2 class="panel-title" id="platTitle" style="margin:0">Platforms</h2>
+        <span class="row" style="gap:10px"><button type="button" class="btn-link" data-all="1">All</button><button type="button" class="btn-link" data-all="0">None</button></span>
+      </div>
+      <fieldset class="chip-row plain-fieldset"><legend class="sr-only">Platforms</legend>
+        {% for p in platforms %}
+        <label class="chip"><input type="checkbox" name="platforms" value="{{ p.key }}" checked>{{ pbadge(p) }}{{ p.label }}</label>
+        {% endfor %}
+      </fieldset>
+      <small class="field-error" id="platErr" role="alert" hidden>Pick at least one platform.</small>
+      <label class="check-row"><input type="checkbox" id="review" checked> <span><b>Check evidence and brief first</b><small>Recommended. Untick to write posts straight away.</small></span></label>
+      <button class="btn btn-primary" style="width:100%" type="submit" id="startBtn">Analyse source {{ icon("arrow", 18) }}</button>
+    </section>
+  </aside>
 </form>
 {% endblock %}
 {% block scripts %}
 <script>
+(function () {
   const form = document.getElementById("newForm");
-  document.querySelectorAll("[data-idea]").forEach((b) =>
-    b.addEventListener("click", () => { form.source.value = b.dataset.idea; form.source.focus(); }));
-  document.querySelectorAll("[data-all]").forEach((b) =>
-    b.addEventListener("click", () => form.querySelectorAll("input[name=platforms]").forEach((c) => (c.checked = b.dataset.all === "1"))));
+  const tabs = [...document.querySelectorAll(".seg-btn")];
+  const pane = document.getElementById("pane");
+  const source = form.source;
+  const count = document.getElementById("sourceCount");
+  const startBtn = document.getElementById("startBtn");
+  const startLabel = startBtn.innerHTML;
+  const LABELS = { idea: "Your idea", draft: "Your draft", article: "Article text", url: "", document: "Document text", reuse: "Source" };
+  let type = "idea";
+
+  function setType(next, focus) {
+    type = next;
+    tabs.forEach((t) => t.setAttribute("aria-selected", String(t.dataset.type === type)));
+    pane.setAttribute("aria-labelledby", `tab-${type}`);
+    form.querySelectorAll("[data-show]").forEach((el) => (el.hidden = !el.dataset.show.split(" ").includes(type)));
+    form.querySelectorAll("[data-hide]").forEach((el) => (el.hidden = el.dataset.hide.split(" ").includes(type)));
+    document.getElementById("bodyLabel").textContent = LABELS[type];
+    source.rows = type === "idea" ? 5 : 12;
+    clearErrors();
+    if (focus) (type === "url" ? form.url : type === "document" ? document.getElementById("file") : type === "reuse" ? document.getElementById("reuseSelect") : source).focus();
+  }
+  tabs.forEach((t, i) => {
+    t.addEventListener("click", () => setType(t.dataset.type, true));
+    t.addEventListener("keydown", (e) => {
+      const d = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+      if (d) { e.preventDefault(); const n = tabs[(i + d + tabs.length) % tabs.length]; n.focus(); setType(n.dataset.type, false); }
+    });
+  });
+
+  const updateCount = () => (count.textContent = `${source.value.length.toLocaleString()} characters`);
+  source.addEventListener("input", updateCount);
+  updateCount();
+
+  document.querySelectorAll("[data-idea]").forEach((b) => b.addEventListener("click", () => { source.value = b.dataset.idea; updateCount(); source.focus(); }));
+  document.querySelectorAll("[data-all]").forEach((b) => b.addEventListener("click", () => form.querySelectorAll("input[name=platforms]").forEach((c) => (c.checked = b.dataset.all === "1"))));
+
+  document.getElementById("file").addEventListener("change", async (e) => {
+    const f = e.target.files[0];
+    const err = document.getElementById("fileErr");
+    err.hidden = true;
+    if (!f) return;
+    if (f.size > 1_000_000) { err.textContent = "That file is over 1 MB."; err.hidden = false; return; }
+    if (/\.(pdf|docx?|pages)$/i.test(f.name)) { err.textContent = "PDF and Word files aren't supported yet. Copy the text into Article instead."; err.hidden = false; return; }
+    let text = await f.text();
+    if (/\.html?$/i.test(f.name)) text = new DOMParser().parseFromString(text, "text/html").body.innerText;
+    source.value = text.trim();
+    if (!form.title.value) form.title.value = f.name.replace(/\.[^.]+$/, "");
+    updateCount();
+  });
+
+  const reuse = document.getElementById("reuseSelect");
+  async function loadReuse() {
+    if (!reuse.value) return;
+    try {
+      const r = await Grow.api("GET", `/api/runs/${reuse.value}/source`);
+      source.value = r.source;
+      form.title.value = (r.meta && r.meta.title) || reuse.options[reuse.selectedIndex].text;
+      updateCount();
+    } catch (err) { Grow.toast(err.message, "error"); }
+  }
+  reuse.addEventListener("change", loadReuse);
+
+  function fieldError(id, message) {
+    const el = document.getElementById(id);
+    el.textContent = message;
+    el.hidden = false;
+    const input = document.querySelector(`[aria-describedby~="${id}"]`);
+    if (input) { input.setAttribute("aria-invalid", "true"); input.focus(); }
+  }
+  function clearErrors() {
+    form.querySelectorAll(".field-error").forEach((e) => (e.hidden = true));
+    form.querySelectorAll("[aria-invalid]").forEach((e) => e.removeAttribute("aria-invalid"));
+  }
+
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
+    clearErrors();
     const platforms = [...form.querySelectorAll("input[name=platforms]:checked")].map((c) => c.value);
-    if (!platforms.length) return Grow.toast("Pick at least one platform", "error");
-    const btn = document.getElementById("startBtn");
-    btn.disabled = true;
+    let text = source.value.trim();
+    if (type === "url") {
+      const u = form.url.value.trim();
+      if (!/^https?:\/\/[^\s/]+\.[^\s]+/i.test(u)) return fieldError("urlErr", "Enter a full web address starting with https://");
+      text = u;
+    } else if (!text) {
+      return fieldError("sourceErr", type === "document" ? "Choose a document first." : type === "reuse" ? "Choose a past loop first." : "Write or paste something for the loop to work from.");
+    }
+    if (!platforms.length) { document.getElementById("platErr").hidden = false; return; }
+    const meta = { input_type: type, url: type === "url" ? text : "" };
+    ["title", "author", "source_date", "objective", "audience", "cta", "style", "campaign"].forEach((k) => (meta[k] = (form[k] && form[k].value) || ""));
+    const review = document.getElementById("review").checked;
+    startBtn.disabled = true;
+    startBtn.textContent = review ? "Reading your source…" : "Starting…";
     try {
-      const run = await Grow.api("POST", "/api/runs", { source: form.source.value, platforms });
+      const run = await Grow.api("POST", "/api/runs", { source: text, platforms, meta, review });
       location.href = run.url;
     } catch (err) {
       Grow.toast(err.message, "error");
-      btn.disabled = false;
+      startBtn.disabled = false;
+      startBtn.innerHTML = startLabel;
     }
   });
+
+  document.getElementById("review").addEventListener("change", (e) => {
+    startBtn.innerHTML = e.target.checked ? startLabel : startLabel.replace("Analyse source", "Write posts");
+  });
+
+  setType("{{ 'reuse' if reuse else 'idea' }}");
+  if (reuse.value) loadReuse();
+})();
 </script>
 {% endblock %}

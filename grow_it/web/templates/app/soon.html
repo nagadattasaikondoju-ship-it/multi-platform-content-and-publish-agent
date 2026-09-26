@@ -1,0 +1,16 @@
+{% extends "app/base.html" %}
+{% block page_title %}{{ area }}{% endblock %}
+{% block main %}
+{% set copy = {
+  "Assets": ("Your images, videos and logos, in one place", "Upload brand assets once and attach them to posts. Instagram, TikTok, YouTube, Pinterest and Snapchat need media before they can publish; today you add it when you publish.", "image"),
+  "Team": ("Work together on every loop", "Invite editors and reviewers, give clients a restricted review link, and collect comments and change requests before anything goes out. Roles: Owner, Admin, Editor, Reviewer, Viewer and Client Reviewer.", "team"),
+} %}
+{% set heading, body, ic = copy[area] %}
+<div class="page-head"><div><p class="eyebrow">{{ area }}</p><h1 class="h-lg">{{ heading }}</h1></div></div>
+<div class="panel empty soon">
+  <div class="soon-icon">{{ icon(ic, 30) }}</div>
+  <span class="chip-static">Coming soon</span>
+  <p class="muted" style="max-width:56ch;margin:16px auto 22px">{{ body }}</p>
+  <a class="btn btn-quiet" href="/app">Back to Home</a>
+</div>
+{% endblock %}

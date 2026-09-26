@@ -64,18 +64,24 @@ cp .env.example .env   # add GEMINI_API_KEY (and ZERNIO_API_KEY to publish)
 grow-it serve            # http://127.0.0.1:8000
 ```
 
-The site has four public pages (Home, How it works, Platforms, Pricing) and a console:
+The site has four public pages (Home, How it works, Platforms, Pricing) and a console with a sidebar, a ⌘K search palette, notifications and a mobile menu:
 
-| Page | What it does |
+| Area | What it does |
 |---|---|
-| `/app` — Loops | Every loop you have run and where each post stands |
-| `/app/new` — New loop | Paste a topic, draft or link; pick platforms; start the loop |
-| `/app/runs/<id>` | Posts arrive live; edit with a live character meter, approve, skip, rewrite one platform, then publish now, schedule, or preview |
-| `/app/runs/<id>/report` | What it read, the brief it chose, what it made, what it sent — printable as a PDF |
-| `/app/autopilot` | Idea queue plus a schedule (every N days at a time). Review mode waits for you; publish mode sends posts that pass every check |
-| `/app/calendar` | Scheduled and published posts by month |
-| `/app/voice` | Brand, audience and voice notes added to every brief |
-| `/app/connections` | Which keys are set and which Zernio accounts are connected |
+| **Home** (`/app`) | A "next best action" card, this week's progress, 14-day consistency, posts waiting for approval, scheduled posts, failures and recent loops |
+| **Create** (`/app/new`) | Start from a quick idea, a draft, an article, a web page, a text/Markdown/HTML document, or a past loop, with objective, audience, call to action, style and campaign |
+| Evidence & brief (`/app/runs/<id>` while in review) | The facts, figures and quotes found in the source, each with the exact excerpt. A claim is only marked *In source* if that excerpt really appears in the source text. You approve, edit, add or remove facts, then edit the brief (thesis, audience, pain point, angle, key points, hooks, CTAs, tone, style, pillars, keywords, hashtag guidance, banned words) before any post is written |
+| Posts (`/app/runs/<id>`) | One post per platform, checked against its limits and your banned words. Edit with a live character meter, approve, skip or rewrite, then publish now, schedule or preview |
+| **Content Library** (`/app/library`) | Every loop, searchable and filterable |
+| **Calendar** (`/app/calendar`) | Scheduled and published posts by month |
+| **Approvals** (`/app/approvals`) | Briefs to sign off and posts to approve |
+| **Analytics** (`/app/analytics`) | Output and consistency now; engagement metrics are coming |
+| **Brand Kit** (`/app/brand`) | Brand, audience, tone, words to use and avoid, default CTA and hashtags |
+| **Integrations** (`/app/integrations`) | Connect social accounts through Zernio |
+| **Autopilot** (`/app/autopilot`) | Idea queue plus a schedule, in review or publish mode |
+| Assets, Team | Marked as coming soon |
+
+Posts only ever use facts you approved. With no approved facts, the writer is told to produce opinion-led, educational or question-led posts and state nothing as fact.
 
 Loops, posts and settings are stored in SQLite at `data/grow_it.db` (override with `GROW_IT_DB`). Background work runs in the server process; if it restarts mid-loop, the loop is marked interrupted and single posts can be rewritten.
 

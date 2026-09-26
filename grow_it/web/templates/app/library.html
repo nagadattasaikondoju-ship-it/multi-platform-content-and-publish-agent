@@ -1,0 +1,65 @@
+{% extends "app/base.html" %}
+{% block page_title %}Content Library{% endblock %}
+{% block main %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Content Library</p>
+    <h1 class="h-lg">Every loop</h1>
+    <p>Each source you've turned into posts, and where every post stands.</p>
+  </div>
+  <a class="btn btn-primary" href="/app/new">{{ icon("plus", 18) }} Create a loop</a>
+</div>
+
+{% if runs %}
+<div class="filters" role="search">
+  <label class="sr-only" for="libSearch">Search loops</label>
+  <input class="input" id="libSearch" type="search" placeholder="Search by title or text">
+  <label class="sr-only" for="libStatus">Loop status</label>
+  <select class="input" id="libStatus">
+    <option value="">All statuses</option>
+    {% for s, label in [("review", "Brief to review"), ("ready", "Ready"), ("writing", "Writing"), ("failed", "Failed")] %}<option value="{{ s }}">{{ label }}</option>{% endfor %}
+  </select>
+</div>
+<div class="table-wrap cards-on-mobile">
+  <table class="data" id="libTable">
+    <thead><tr><th scope="col">Loop</th><th scope="col">Started</th><th scope="col">Stage</th><th scope="col">Posts</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
+    <tbody>
+    {% for run in runs %}
+      <tr data-status="{{ run.status }}" data-text="{{ (run_title(run) ~ ' ' ~ run.source[:300])|lower }}">
+        <td data-label="Loop" style="max-width:440px"><a class="rowlink" href="/app/runs/{{ run.id }}">{{ run_title(run) }}</a>
+          <div class="mono muted" style="margin-top:4px">{% if run.origin == "autopilot" %}Autopilot{% else %}{{ input_types.get(run.meta.input_type, "Idea") }}{% endif %}{% if (run.meta or {}).get("campaign") %} · {{ run.meta.campaign }}{% endif %}</div></td>
+        <td data-label="Started" class="muted" style="white-space:nowrap"><time datetime="{{ run.created_at }}" data-local>{{ run.created_at }}</time></td>
+        <td data-label="Stage">{{ status(run.status) }}</td>
+        <td data-label="Posts"><div class="row" style="gap:6px">
+          {% for s in ["published", "scheduled", "previewed", "approved", "draft", "failed"] %}{% if run.counts.get(s) %}<span class="status s-{{ s }}">{{ run.counts[s] }} {{ s }}</span>{% endif %}{% endfor %}
+        </div></td>
+        <td style="text-align:right"><a class="btn btn-quiet btn-sm" href="/app/runs/{{ run.id }}">Open</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted empty-line" id="libEmpty" hidden style="padding:18px">No loops match.</p>
+</div>
+{% else %}
+<div class="panel empty">
+  {{ logo_mark() }}
+  <h2 class="h-md">Your library is empty</h2>
+  <p class="muted" style="max-width:46ch;margin:0 auto 22px">Every loop you create is kept here: its source, the evidence you approved, the brief and every post.</p>
+  <a class="btn btn-primary" href="/app/new">Create your first loop</a>
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+  const q = document.getElementById("libSearch"), st = document.getElementById("libStatus");
+  function filter() {
+    let shown = 0;
+    document.querySelectorAll("#libTable tbody tr").forEach((tr) => {
+      const ok = (!q.value || tr.dataset.text.includes(q.value.toLowerCase())) && (!st.value || tr.dataset.status === st.value);
+      tr.hidden = !ok; shown += ok;
+    });
+    document.getElementById("libEmpty").hidden = shown > 0;
+  }
+  if (q) { q.addEventListener("input", filter); st.addEventListener("change", filter); }
+</script>
+{% endblock %}
