@@ -270,3 +270,22 @@ def test_postgres_placeholders_are_translated():
             return sql
 
     assert _DB(Conn(), postgres=True).execute("SELECT * FROM t WHERE a = ? AND b = ?") == "SELECT * FROM t WHERE a = %s AND b = %s"
+
+
+def test_public_pages_are_readable_by_crawlers_and_link_previews(client):
+    for path in ("/", "/how-it-works", "/platforms", "/pricing"):
+        head = client.head(path)
+        assert head.status_code == 200 and head.content == b"", path
+        assert head.headers["content-type"].startswith("text/html")
+        html = client.get(path).text
+        assert 'content="index, follow"' in html
+        assert '<meta property="og:title"' in html and "/static/img/og.png" in html
+        assert f'<link rel="canonical" href="http://testserver{path}">' in html
+    assert client.head("/static/img/og.png").status_code == 200
+
+    robots = client.get("/robots.txt").text
+    assert "Disallow: /app" in robots and "Sitemap: http://testserver/sitemap.xml" in robots
+    sitemap = client.get("/sitemap.xml")
+    assert sitemap.headers["content-type"].startswith("application/xml")
+    assert "<loc>http://testserver/pricing</loc>" in sitemap.text
+    assert 'content="noindex, nofollow"' in client.get("/app").text

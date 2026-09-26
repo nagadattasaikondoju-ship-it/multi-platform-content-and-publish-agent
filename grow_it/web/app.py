@@ -10,7 +10,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -64,6 +64,7 @@ def default_store() -> Store:
 
 
 PROTECTED = ("/app", "/api", "/start")
+PUBLIC_PAGES = ("/", "/how-it-works", "/platforms", "/pricing")
 OPEN_API = ("/api/cron/",)
 CONNECT_PLATFORMS_OAUTH = {
     "x", "linkedin", "instagram", "facebook", "threads", "tiktok", "youtube",
@@ -119,6 +120,7 @@ def create_app(store: Store | None = None, llm_factory=GeminiLLM, autopilot: boo
         context.setdefault("auth_mode", auth.mode())
         context.setdefault("auth_provider", auth.provider())
         context.setdefault("is_admin", service.is_admin(context["user"]))
+        context.setdefault("site_url", base_url(request))
         return templates.TemplateResponse(request, name, context)
 
     # --- who is signed in ---------------------------------------------------
@@ -242,6 +244,39 @@ def create_app(store: Store | None = None, llm_factory=GeminiLLM, autopilot: boo
         return response
 
     # --- marketing ----------------------------------------------------------
+    # --- for search engines, link previews and AI readers ----------------------
+    @app.middleware("http")
+    async def answer_head(request: Request, call_next):
+        # Link checkers, previewers and AI "read this URL" tools often send HEAD first.
+        if request.method != "HEAD":
+            return await call_next(request)
+        request.scope["method"] = "GET"
+        response = await call_next(request)
+        headers = {k: v for k, v in response.headers.items() if k.lower() != "content-length"}
+        return Response(status_code=response.status_code, headers=headers)
+
+    @app.get("/robots.txt", response_class=PlainTextResponse)
+    def robots(request: Request):
+        return (
+            "User-agent: *\n"
+            "Allow: /\n"
+            "Disallow: /app\n"
+            "Disallow: /api/\n"
+            "Disallow: /auth/\n"
+            "Disallow: /start\n"
+            f"\nSitemap: {base_url(request)}/sitemap.xml\n"
+        )
+
+    @app.get("/sitemap.xml")
+    def sitemap(request: Request):
+        site = base_url(request)
+        urls = "".join(f"<url><loc>{site}{path}</loc></url>" for path in PUBLIC_PAGES)
+        return Response(
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            f'<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{urls}</urlset>',
+            media_type="application/xml",
+        )
+
     @app.get("/", response_class=HTMLResponse)
     def home(request: Request):
         return page(request, "home.html", nav="home")
