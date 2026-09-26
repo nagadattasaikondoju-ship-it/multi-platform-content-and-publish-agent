@@ -1,4 +1,4 @@
-from grow_it.models import ContentBrief, PlatformPost
+from grow_it.models import ContentBrief, PlatformPost, SourceAnalysis, SourceClaim
 
 BRIEF = ContentBrief(
     topic="Remote work",
@@ -8,6 +8,24 @@ BRIEF = ContentBrief(
     hooks=["Your calendar is the bottleneck."],
     facts=[],
     cta="Try one meeting-free day this week.",
+)
+
+# One claim the source supports word for word, one it does not (the model "invented" it).
+ANALYSIS = SourceAnalysis(
+    title="Async-first teams",
+    thesis="Async-first teams ship faster.",
+    key_insights=["Fewer meetings", "Written decisions"],
+    claims=[
+        SourceClaim(text="Teams cut meetings by 40%.", kind="metric", snippet="we cut meetings by 40%"),
+        SourceClaim(text="Async teams are 3x more productive.", kind="metric", snippet="3x more productive"),
+    ],
+    pain_points=["Too many meetings"],
+    benefits=["More deep work"],
+    hooks=["Your calendar is the bottleneck."],
+    topics=["remote work", "productivity"],
+    audience="Startup founders",
+    cta_options=["Try one meeting-free day", "Read the guide"],
+    risky_claims=["3x more productive"],
 )
 
 
@@ -22,6 +40,8 @@ class FakeLLM:
         self.prompts.append(prompt)
         if schema is ContentBrief:
             return BRIEF
+        if schema is SourceAnalysis:
+            return ANALYSIS
         key = prompt.split("(key: ", 1)[1].split(")", 1)[0]
         queued = self.queue.get(key)
         if queued:

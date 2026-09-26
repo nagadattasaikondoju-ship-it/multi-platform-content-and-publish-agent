@@ -2,27 +2,111 @@
 {% block body_class %}app-body{% endblock %}
 {% block robots %}noindex, nofollow{% endblock %}
 {% block title %}{% block page_title %}Console{% endblock %} · Grow it{% endblock %}
+{% set nav_groups = [
+  ("", [
+    ("home", "Home", "/app", "home"),
+    ("create", "Create", "/app/new", "plus"),
+    ("library", "Content Library", "/app/library", "library"),
+    ("calendar", "Calendar", "/app/calendar", "calendar"),
+    ("approvals", "Approvals", "/app/approvals", "approve"),
+    ("analytics", "Analytics", "/app/analytics", "chart"),
+  ]),
+  ("Brand", [
+    ("brand", "Brand Kit", "/app/brand", "brand"),
+    ("assets", "Assets", "/app/assets", "image"),
+  ]),
+  ("Workspace", [
+    ("integrations", "Integrations", "/app/integrations", "plug"),
+    ("autopilot", "Autopilot", "/app/autopilot", "loop"),
+    ("team", "Team", "/app/team", "team"),
+    ("settings", "Settings", "/app/settings", "settings"),
+  ]),
+] %}
+{% set display_name = (user.name or user.email or "You") if user else "You" %}
 {% block body %}
-<header class="app-header">
-  <div class="wrap">
-    {{ logo(sub=false, href="/app") }}
-    <nav class="app-tabs" aria-label="Console">
-      <a href="/app" class="{{ 'active' if tab == 'dashboard' }}">Loops</a>
-      <a href="/app/new" class="{{ 'active' if tab == 'new' }}">New loop</a>
-      <a href="/app/autopilot" class="{{ 'active' if tab == 'autopilot' }}">Autopilot</a>
-      <a href="/app/calendar" class="{{ 'active' if tab == 'calendar' }}">Calendar</a>
-      <a href="/app/voice" class="{{ 'active' if tab == 'voice' }}">Brand voice</a>
-      <a href="/app/connections" class="{{ 'active' if tab == 'connections' }}">Accounts</a>
+<a class="skip-link" href="#main">Skip to content</a>
+<div class="shell" id="shell">
+  <aside class="sidebar" id="sidebar" aria-label="Main">
+    <div class="sidebar-head">
+      {{ logo(sub=false, href="/app") }}
+      <button class="icon-btn only-mobile" type="button" data-close-nav aria-label="Close menu">{{ icon("close", 20) }}</button>
+    </div>
+    <div class="workspace" title="{{ workspace_name }}">
+      <span class="workspace-mark" aria-hidden="true">{{ workspace_name[:1]|upper }}</span>
+      <span class="workspace-text"><b>{{ workspace_name }}</b><small>Personal workspace</small></span>
+    </div>
+    <nav class="side-nav">
+      {% for group, items in nav_groups %}
+        {% if group %}<div class="side-group">{{ group }}</div>{% endif %}
+        {% for key, label, href, ic in items %}
+          <a href="{{ href }}" class="side-link{{ ' active' if tab == key }}"{% if tab == key %} aria-current="page"{% endif %} data-label="{{ label }}">
+            {{ icon(ic, 19) }}<span>{{ label }}</span>
+            {% if key == "approvals" and nav_counts and nav_counts.approvals %}<em class="side-count">{{ nav_counts.approvals }}<span class="sr-only"> waiting</span></em>{% endif %}
+          </a>
+        {% endfor %}
+      {% endfor %}
     </nav>
-    {% if user and user.id != "local" %}
-      <span class="user-chip">{% if user.picture %}<img class="avatar" src="{{ user.picture }}" alt="" referrerpolicy="no-referrer">{% else %}<span class="avatar">{{ (user.name or user.email or "?")[:1]|upper }}</span>{% endif %}<span>{{ user.name or user.email }}</span></span>
-      <a class="btn btn-quiet btn-sm" href="/logout">Sign out</a>
-    {% else %}
-      <a class="btn btn-quiet btn-sm" href="/">Site</a>
-    {% endif %}
+    <div class="sidebar-foot">
+      <a class="side-link" href="/how-it-works" data-label="Help">{{ icon("help", 19) }}<span>Help &amp; guide</span></a>
+      <button class="side-link only-desktop" type="button" id="collapseNav" aria-pressed="false" data-label="Collapse">{{ icon("sidebar", 19) }}<span>Collapse</span></button>
+    </div>
+  </aside>
+  <div class="scrim" data-close-nav></div>
+
+  <div class="shell-main">
+    <header class="topbar">
+      <button class="icon-btn only-mobile" type="button" id="openNav" aria-label="Open menu" aria-controls="sidebar" aria-expanded="false">{{ icon("menu", 22) }}</button>
+      <div class="crumb">
+        <span class="muted only-desktop">{{ workspace_name }}</span>
+        <span class="crumb-sep only-desktop" aria-hidden="true">/</span>
+        <b>{{ self.page_title() }}</b>
+      </div>
+      <button class="search-btn" type="button" id="openPalette" aria-haspopup="dialog">
+        {{ icon("search", 17) }}<span>Search or jump to…</span><kbd>⌘K</kbd>
+      </button>
+      <div class="topbar-actions">
+        <a class="btn btn-primary btn-sm only-desktop" href="/app/new">{{ icon("plus", 16) }} Create content</a>
+        <div class="menu-wrap">
+          <button class="icon-btn" type="button" id="bellBtn" aria-haspopup="true" aria-expanded="false" aria-controls="bellMenu" aria-label="Notifications">
+            {{ icon("bell", 20) }}<i class="dot" id="bellDot" hidden></i>
+          </button>
+          <div class="menu menu-wide" id="bellMenu" hidden>
+            <div class="menu-head">Notifications</div>
+            <div id="bellList"><div class="menu-empty">Loading…</div></div>
+          </div>
+        </div>
+        <a class="icon-btn only-desktop" href="/how-it-works" aria-label="Help and guide">{{ icon("help", 20) }}</a>
+        <div class="menu-wrap">
+          <button class="user-btn" type="button" id="userBtn" aria-haspopup="true" aria-expanded="false" aria-controls="userMenu" aria-label="Account menu">
+            {% if user and user.picture %}<img class="avatar" src="{{ user.picture }}" alt="" referrerpolicy="no-referrer">{% else %}<span class="avatar">{{ display_name[:1]|upper }}</span>{% endif %}
+          </button>
+          <div class="menu" id="userMenu" hidden>
+            <div class="menu-head">{{ display_name }}{% if user and user.email %}<small>{{ user.email }}</small>{% endif %}</div>
+            <a href="/app/settings">Settings</a>
+            <a href="/app/brand">Brand Kit</a>
+            <a href="/">Public site</a>
+            {% if user and user.id != "local" %}<a href="/logout">Sign out</a>{% endif %}
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="app-main" id="main" tabindex="-1"><div class="app-wrap">
+    {% if storage == "temporary" %}<div class="note warn" style="margin-bottom:24px">Storage is temporary on this deployment — loops can disappear. Connect a Postgres database (Vercel → Storage → Neon) to keep them. <a href="/app/integrations">Details</a></div>{% endif %}
+    {% block main %}{% endblock %}
+    </div></main>
   </div>
-</header>
-<main class="app-main"><div class="wrap">
-{% if storage == "temporary" %}<div class="note warn" style="margin-bottom:24px">Storage is temporary on this deployment — loops can disappear. Connect a Postgres database (Vercel → Storage → Neon) to keep them. <a href="/app/connections">Details</a></div>{% endif %}
-{% block main %}{% endblock %}</div></main>
+</div>
+
+<a class="fab only-mobile" href="/app/new" aria-label="Create content">{{ icon("plus", 24) }}</a>
+
+<dialog class="palette" id="palette" aria-label="Search and jump">
+  <div class="palette-input">{{ icon("search", 18) }}<input id="paletteInput" type="text" placeholder="Search loops or jump to a page…" autocomplete="off" aria-label="Search loops or pages" aria-controls="paletteList"></div>
+  <ul id="paletteList" role="listbox" aria-label="Results"></ul>
+  <div class="palette-foot"><span><kbd>↑</kbd><kbd>↓</kbd> move</span><span><kbd>↵</kbd> open</span><span><kbd>esc</kbd> close</span></div>
+</dialog>
+<script>
+  window.GROW_NAV = [{% for group, items in nav_groups %}{% for key, label, href, ic in items %}{{ [label, href]|tojson }},{% endfor %}{% endfor %}];
+</script>
+<script src="/static/js/console.js"></script>
 {% endblock %}

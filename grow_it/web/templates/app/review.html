@@ -1,0 +1,290 @@
+{% extends "app/base.html" %}
+{% block page_title %}Evidence &amp; brief{% endblock %}
+{% block main %}
+<div class="page-head">
+  <div style="min-width:0">
+    <p class="eyebrow">Loop · <time datetime="{{ run.created_at }}" data-local>{{ run.created_at }}</time>{% if run.meta.campaign %} · {{ run.meta.campaign }}{% endif %}</p>
+    <h1 class="h-lg run-title" style="overflow-wrap:anywhere">{{ title }}</h1>
+  </div>
+</div>
+
+<ol class="stepper" aria-label="Loop steps">
+  <li class="done"><b>1</b> Source</li>
+  <li class="current" aria-current="step"><b>2</b> Evidence &amp; brief</li>
+  <li><b>3</b> Posts</li>
+  <li><b>4</b> Publish</li>
+</ol>
+
+<div id="analyzing" class="panel analyzing" {% if run.status != "analyzing" %}hidden{% endif %} aria-live="polite">
+  <div class="spinner" aria-hidden="true"></div>
+  <div>
+    <h2 class="h-sm">Reading your source</h2>
+    <p class="muted" style="margin:0">Pulling out the thesis, facts, figures and quotes, and checking each one against the exact words in your source. This usually takes 10–30 seconds.</p>
+  </div>
+</div>
+
+<form id="reviewForm" class="review-layout" {% if run.status != "review" %}hidden{% endif %} novalidate>
+  <div class="review-main">
+    <section class="panel" aria-labelledby="evTitle">
+      <div class="spread">
+        <h2 class="panel-title" id="evTitle">Source evidence</h2>
+        <button type="button" class="btn btn-quiet btn-sm" id="addFact">{{ icon("plus", 15) }} Add a fact</button>
+      </div>
+      <p class="muted section-help">Only facts you tick are given to the writer. <span class="tag tag-ok">In source</span> means we found the exact words in your source. <span class="tag tag-warn">Not in source</span> means we couldn't. Check those before you use them.</p>
+      <div id="evidence"></div>
+      <div id="noFacts" class="note" hidden>No factual claims were found. That's fine: posts will be opinion-led, educational or question-led, and nothing will be stated as fact.</div>
+      <div id="risky"></div>
+      <details class="source-details" id="sourceDetails">
+        <summary>Show the source text</summary>
+        <pre class="source-text" id="sourceText">Loading…</pre>
+      </details>
+    </section>
+
+    <section class="panel" aria-labelledby="briefTitle">
+      <h2 class="panel-title" id="briefTitle">Content brief</h2>
+      <p class="muted section-help">Every post is written from this. Change anything that isn't right.</p>
+      <div class="grid-2 compact">
+        <label class="field"><span>Campaign</span><input class="input" data-b="campaign" maxlength="200"></label>
+        <label class="field"><span>Content style</span><select class="input" data-b="style">{% for st in styles %}<option>{{ st }}</option>{% endfor %}</select></label>
+      </div>
+      <label class="field"><span>Central thesis</span><textarea class="input" data-b="thesis" rows="2" maxlength="600" required aria-describedby="thesisErr"></textarea><small class="field-error" id="thesisErr" hidden>The brief needs a thesis.</small></label>
+      <div class="grid-2 compact">
+        <label class="field"><span>Target audience</span><input class="input" data-b="audience" maxlength="300"></label>
+        <label class="field"><span>Audience pain point</span><input class="input" data-b="pain_point" maxlength="300"></label>
+        <label class="field"><span>Desired outcome</span><input class="input" data-b="desired_outcome" maxlength="300"></label>
+        <label class="field"><span>Angle / point of view</span><input class="input" data-b="angle" maxlength="300" placeholder="e.g. Most advice gets this backwards"></label>
+      </div>
+      <label class="field"><span>Key points</span><textarea class="input" data-b="key_points" data-list rows="4"></textarea><small>One per line.</small></label>
+      <label class="field"><span>Hooks</span><textarea class="input" data-b="hooks" data-list rows="3"></textarea><small>One per line. Opening lines the writer can use.</small></label>
+      <div class="grid-2 compact">
+        <label class="field"><span>Main call to action</span><input class="input" data-b="cta" maxlength="300"></label>
+        <label class="field"><span>Secondary call to action</span><input class="input" data-b="secondary_cta" maxlength="300"></label>
+        <label class="field"><span>Tone</span><input class="input" data-b="tone" maxlength="300"></label>
+        <label class="field"><span>Content pillars</span><input class="input" data-b="pillars" data-csv maxlength="500"><small>Comma separated.</small></label>
+        <label class="field"><span>Keywords</span><input class="input" data-b="keywords" data-csv maxlength="500"><small>Comma separated.</small></label>
+        <label class="field"><span>Hashtag guidance</span><input class="input" data-b="hashtag_guidance" maxlength="300"></label>
+      </div>
+      <label class="field"><span>Never use</span><input class="input" data-b="prohibited" data-csv maxlength="1000" placeholder="e.g. guaranteed, best in the world"><small>Comma separated. Posts containing these are flagged and can't be approved.</small></label>
+    </section>
+  </div>
+
+  <aside class="review-side">
+    <section class="panel" aria-labelledby="sumTitle">
+      <h2 class="panel-title" id="sumTitle">Ready to write?</h2>
+      <ul class="summary-list">
+        <li><b id="sumApproved">0</b> facts approved</li>
+        <li><b id="sumUnsupported">0</b> approved but not found in source</li>
+        <li><b id="sumPlatforms">0</b> platforms</li>
+      </ul>
+      <fieldset class="chip-row plain-fieldset" style="margin:14px 0 6px"><legend class="field-label" style="margin-bottom:8px">Platforms</legend>
+        {% for p in platforms %}
+        <label class="chip"><input type="checkbox" name="platforms" value="{{ p.key }}"{{ " checked" if p.key in run.platforms }}>{{ pbadge(p) }}{{ p.label }}</label>
+        {% endfor %}
+      </fieldset>
+      <small class="field-error" id="platErr" role="alert" hidden>Pick at least one platform.</small>
+      <div id="unsupportedWarn" class="note warn" style="font-size:13px;margin-top:12px" hidden>Some approved facts aren't in your source. Posts will state them as true — make sure they are.</div>
+      <button class="btn btn-primary" type="submit" id="writeBtn" style="width:100%;margin-top:14px">{{ icon("write", 18) }} Write the posts</button>
+      <button class="btn btn-quiet btn-sm" type="button" id="saveBtn" style="width:100%;margin-top:8px">Save and finish later</button>
+      <p class="muted" style="font-size:12.5px;margin:12px 0 0">Nothing is published until you approve each post.</p>
+    </section>
+  </aside>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<template id="closeIcon">{{ icon("close", 16) }}</template>
+<script>
+(function () {
+  const RUN_ID = {{ run.id|tojson }};
+  const SERVERLESS = {{ serverless|tojson }};
+  const form = document.getElementById("reviewForm");
+  const evEl = document.getElementById("evidence");
+  const CLOSE_ICON = document.getElementById("closeIcon").innerHTML;
+  const KINDS = { fact: "Fact", metric: "Figure", quote: "Quote", opinion: "Opinion" };
+  let evidence = [];
+  let dirty = false;
+  let busy = false;
+
+  const esc = Grow.escape;
+  const markDirty = () => { dirty = true; summarise(); };
+
+  function claimRow(c, i) {
+    const found = c.supported;
+    return `<div class="claim${c.approved ? " on" : ""}" data-i="${i}">
+      <input type="checkbox" class="claim-check" aria-label="Use this fact" ${c.approved ? "checked" : ""}>
+      <div class="claim-body">
+        <div class="claim-meta">
+          <span class="tag">${esc(KINDS[c.kind] || "Fact")}</span>
+          ${found ? `<span class="tag tag-ok">In source</span>` : `<span class="tag tag-warn">Not in source</span>`}
+          ${c.added ? `<span class="tag">Added by you</span>` : c.edited ? `<span class="tag">Edited</span>` : ""}
+        </div>
+        <textarea class="input claim-text" rows="1" maxlength="1000" aria-label="Fact wording">${esc(c.text)}</textarea>
+        ${found ? `<blockquote class="claim-snippet">“${esc(c.snippet)}”</blockquote>`
+                : c.added ? `<input class="input claim-snippet-input" maxlength="2000" placeholder="Optional: paste the exact words from the source that back this up" value="${esc(c.snippet || "")}" aria-label="Supporting excerpt">`
+                : `<p class="claim-note">The AI suggested this, but these words aren't in your source. Leave it unticked unless you know it's true.</p>`}
+      </div>
+      <button type="button" class="icon-btn claim-remove" aria-label="Remove this fact">${CLOSE_ICON}</button>
+    </div>`;
+  }
+
+  function drawEvidence() {
+    evEl.innerHTML = evidence.map(claimRow).join("");
+    document.getElementById("noFacts").hidden = evidence.length > 0;
+    evEl.querySelectorAll(".claim-text").forEach(autosize);
+    summarise();
+  }
+  function autosize(t) { t.style.height = "auto"; t.style.height = t.scrollHeight + 2 + "px"; }
+
+  evEl.addEventListener("input", (e) => {
+    const row = e.target.closest(".claim");
+    if (!row) return;
+    const c = evidence[row.dataset.i];
+    if (e.target.classList.contains("claim-text")) { c.text = e.target.value; autosize(e.target); }
+    if (e.target.classList.contains("claim-snippet-input")) c.snippet = e.target.value;
+    markDirty();
+  });
+  evEl.addEventListener("change", (e) => {
+    if (!e.target.classList.contains("claim-check")) return;
+    const row = e.target.closest(".claim");
+    evidence[row.dataset.i].approved = e.target.checked;
+    row.classList.toggle("on", e.target.checked);
+    markDirty();
+  });
+  evEl.addEventListener("click", (e) => {
+    const btn = e.target.closest(".claim-remove");
+    if (!btn) return;
+    evidence.splice(Number(btn.closest(".claim").dataset.i), 1);
+    drawEvidence();
+    markDirty();
+  });
+  document.getElementById("addFact").addEventListener("click", () => {
+    evidence.push({ id: "", text: "", kind: "fact", snippet: "", supported: false, approved: true, added: true });
+    drawEvidence();
+    markDirty();
+    evEl.querySelector(".claim:last-child .claim-text").focus();
+  });
+
+  function selectedPlatforms() { return [...form.querySelectorAll("input[name=platforms]:checked")].map((c) => c.value); }
+  function summarise() {
+    const approved = evidence.filter((c) => c.approved && c.text.trim());
+    document.getElementById("sumApproved").textContent = approved.length;
+    const unsupported = approved.filter((c) => !c.supported).length;
+    document.getElementById("sumUnsupported").textContent = unsupported;
+    document.getElementById("unsupportedWarn").hidden = unsupported === 0;
+    const n = selectedPlatforms().length;
+    document.getElementById("sumPlatforms").textContent = n;
+    document.getElementById("writeBtn").lastChild.textContent = ` Write ${n} post${n === 1 ? "" : "s"}`;
+  }
+  form.querySelectorAll("input[name=platforms]").forEach((c) => c.addEventListener("change", markDirty));
+
+  function fillBrief(b) {
+    form.querySelectorAll("[data-b]").forEach((el) => {
+      const v = b[el.dataset.b];
+      el.value = Array.isArray(v) ? v.join(el.hasAttribute("data-list") ? "\n" : ", ") : v || "";
+      if (el.tagName === "SELECT" && v && ![...el.options].some((o) => o.value === v)) el.add(new Option(v, v, true, true));
+    });
+  }
+  function readBrief() {
+    const b = {};
+    form.querySelectorAll("[data-b]").forEach((el) => {
+      const v = el.value;
+      if (el.hasAttribute("data-list")) b[el.dataset.b] = v.split("\n").map((s) => s.trim()).filter(Boolean);
+      else if (el.hasAttribute("data-csv")) b[el.dataset.b] = v.split(",").map((s) => s.trim()).filter(Boolean);
+      else b[el.dataset.b] = v.trim();
+    });
+    return b;
+  }
+  form.querySelectorAll("[data-b]").forEach((el) => el.addEventListener("input", () => (dirty = true)));
+
+  function payload() {
+    return {
+      brief: readBrief(),
+      evidence: evidence.filter((c) => c.text.trim()).map(({ id, text, kind, snippet, approved }) => ({ id, text, kind, snippet: snippet || "", approved })),
+      platforms: selectedPlatforms(),
+    };
+  }
+  function valid(body) {
+    form.querySelectorAll(".field-error").forEach((e) => (e.hidden = true));
+    if (!body.brief.thesis) { document.getElementById("thesisErr").hidden = false; form.querySelector("[data-b=thesis]").focus(); return false; }
+    if (!body.platforms.length) { document.getElementById("platErr").hidden = false; return false; }
+    return true;
+  }
+
+  function render(run) {
+    evidence = (run.evidence || []).map((c) => ({ ...c }));
+    fillBrief(run.brief || {});
+    drawEvidence();
+    const risky = (run.analysis && run.analysis.risky_claims) || [];
+    document.getElementById("risky").innerHTML = risky.length
+      ? `<div class="note warn risky"><b>Handle with care.</b> These statements need proof before they go out: <ul>${risky.map((r) => `<li>${esc(r)}</li>`).join("")}</ul></div>` : "";
+  }
+
+  document.getElementById("sourceDetails").addEventListener("toggle", async (e) => {
+    if (!e.target.open || e.target.dataset.loaded) return;
+    try {
+      const r = await Grow.api("GET", `/api/runs/${RUN_ID}/source`);
+      document.getElementById("sourceText").textContent = r.text || r.source;
+      e.target.dataset.loaded = "1";
+    } catch (err) { document.getElementById("sourceText").textContent = err.message; }
+  });
+
+  document.getElementById("saveBtn").addEventListener("click", async () => {
+    const body = payload();
+    if (!valid(body) || busy) return;
+    busy = true;
+    try {
+      render(await Grow.api("PUT", `/api/runs/${RUN_ID}/review`, body));
+      dirty = false;
+      Grow.toast("Saved. Pick it up from Approvals any time.");
+    } catch (err) { Grow.toast(err.message, "error"); }
+    busy = false;
+  });
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const body = payload();
+    if (!valid(body) || busy) return;
+    busy = true;
+    const btn = document.getElementById("writeBtn");
+    btn.disabled = true;
+    btn.lastChild.textContent = " Starting…";
+    try {
+      await Grow.api("POST", `/api/runs/${RUN_ID}/generate`, body);
+      dirty = false;
+      location.reload();
+    } catch (err) {
+      Grow.toast(err.message, "error");
+      btn.disabled = false;
+      busy = false;
+      summarise();
+    }
+  });
+  window.addEventListener("beforeunload", (e) => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
+
+  async function waitForAnalysis() {
+    for (;;) {
+      let run;
+      try {
+        run = SERVERLESS ? await Grow.api("POST", `/api/runs/${RUN_ID}/advance`) : await Grow.api("GET", `/api/runs/${RUN_ID}`);
+      } catch (err) {
+        Grow.toast(err.message, "error");
+        await new Promise((r) => setTimeout(r, 3000));
+        continue;
+      }
+      if (run.status !== "analyzing") {
+        if (run.status !== "review") return location.reload();
+        document.getElementById("analyzing").hidden = true;
+        form.hidden = false;
+        render(run);
+        return;
+      }
+      await new Promise((r) => setTimeout(r, SERVERLESS ? 300 : 1200));
+    }
+  }
+
+  const initial = {{ {"status": run.status, "evidence": run.evidence, "brief": run.brief, "analysis": run.analysis}|tojson }};
+  if (initial.status === "review") render(initial);
+  else waitForAnalysis();
+})();
+</script>
+{% endblock %}

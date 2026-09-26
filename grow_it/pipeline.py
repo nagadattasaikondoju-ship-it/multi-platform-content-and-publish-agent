@@ -32,8 +32,22 @@ async def make_brief(llm: LLM, source: str, *, voice: str = "") -> ContentBrief:
     )
 
 
+NO_FACTS_RULE = """NO VERIFIED FACTS: the brief has no approved facts. Write an opinion-led,
+educational or question-led post. Do not state numbers, results, customer stories,
+testimonials or anything presented as fact."""
+
+
+def prohibited_errors(post: PlatformPost, brief: ContentBrief) -> list[str]:
+    """Words or phrases the brief bans, found in the post."""
+    banned = getattr(brief, "prohibited", None) or []
+    text = " ".join(filter(None, [post.title, post.body, post.script, " ".join(post.hashtags)])).lower()
+    return [f'Remove the banned phrase "{w}".' for w in banned if w.strip() and w.strip().lower() in text]
+
+
 def _post_prompt(brief: ContentBrief, spec: PlatformSpec, voice: str, feedback: list[str]) -> str:
     parts = [spec.prompt_block(), f"BRIEF:\n{brief.model_dump_json(indent=2)}"]
+    if not brief.facts:
+        parts.append(NO_FACTS_RULE)
     if voice:
         parts.append(f"BRAND VOICE NOTES:\n{voice}")
     if feedback:
@@ -57,14 +71,13 @@ async def generate_for_platform(
             temperature=0.8 if attempt == 1 else 0.4,
         )
         post.platform = spec.key
-        feedback = check(post, spec)
+        feedback = check(post, spec) + prohibited_errors(post, brief)
         if not feedback:
             return GeneratedPost(post=post, attempts=attempt)
 
     fitted = force_fit(post, spec)
-    return GeneratedPost(
-        post=fitted, attempts=MAX_ATTEMPTS, errors=check(fitted, spec) or feedback, needs_review=True
-    )
+    errors = check(fitted, spec) + prohibited_errors(fitted, brief)
+    return GeneratedPost(post=fitted, attempts=MAX_ATTEMPTS, errors=errors or feedback, needs_review=True)
 
 
 async def run(

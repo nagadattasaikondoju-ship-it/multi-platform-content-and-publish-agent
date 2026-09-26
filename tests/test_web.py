@@ -39,7 +39,9 @@ def wait_for(client, run_id, timeout=5):
 @pytest.mark.parametrize(
     "path",
     ["/", "/how-it-works", "/platforms", "/pricing", "/app", "/app/new",
-     "/app/calendar", "/app/autopilot", "/app/voice", "/app/connections"],
+     "/app/calendar", "/app/autopilot", "/app/voice", "/app/connections",
+     "/app/library", "/app/approvals", "/app/analytics", "/app/brand", "/app/assets",
+     "/app/integrations", "/app/team", "/app/settings"],
 )
 def test_pages_render(client, path):
     response = client.get(path)

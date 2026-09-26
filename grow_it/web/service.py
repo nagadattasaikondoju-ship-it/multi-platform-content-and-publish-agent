@@ -3,14 +3,16 @@
 import asyncio
 import logging
 import os
+import uuid
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 
 from .. import zernio
+from ..evidence import LoopBrief, analyze_source, draft_brief, evidence_from, final_brief, in_source
 from ..ingest import load_source
 from ..llm import LLM
 from ..models import ContentBrief, PlatformPost
-from ..pipeline import generate_for_platform, make_brief
+from ..pipeline import generate_for_platform, make_brief, prohibited_errors
 from ..publish import publish as ayrshare_publish
 from ..specs import load_specs
 from ..validate import check, measure
@@ -105,7 +107,9 @@ class Service:
 
     # --- the loop ---------------------------------------------------------
     def start_run(self, user_id: str, source: str, platforms: list[str] | None = None,
-                  origin: str = "manual") -> str:
+                  origin: str = "manual", meta: dict | None = None, review: bool = False) -> str:
+        """Start a loop. With review, it stops after reading the source so the person can
+        check the evidence and edit the brief before anything is written."""
         limit = self.daily_limit(user_id)
         if limit:
             since = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat(timespec="seconds")
@@ -113,21 +117,87 @@ class Service:
                 raise LimitReached(f"You've used today's {limit} loops. Try again tomorrow.")
         specs = load_specs()
         selected = [p for p in (platforms or list(specs)) if p in specs] or list(specs)
-        run_id = self.store.create_run(source.strip(), selected, origin, user_id=user_id)
+        run_id = self.store.create_run(source.strip(), selected, origin, user_id=user_id,
+                                       status="analyzing" if review else "briefing", meta=meta)
         if not self.serverless:
-            self._spawn(self.run_to_completion(run_id))
+            self._spawn(self._analyze_step(run_id) if review else self.run_to_completion(run_id))
         return run_id
+
+    # --- review stage: evidence and brief ------------------------------------
+    async def _analyze_step(self, run_id: str) -> bool:
+        run = self.store.get_run(run_id)
+        voice = self.store.get_setting(f"voice:{run['user_id']}", {})
+        try:
+            source = await asyncio.to_thread(load_source, run["source"])
+            analysis = await analyze_source(self.llm, source, run["meta"], voice.get("compiled", ""))
+        except Exception as e:
+            log.exception("analysis failed for %s", run_id)
+            self.store.update_run(run_id, status="failed", error=_short(e))
+            return False
+        evidence = evidence_from(analysis, source)
+        brief = draft_brief(analysis, run["meta"], evidence, run["platforms"], voice)
+        self.store.update_run(run_id, status="review", analysis=analysis.model_dump(),
+                              evidence=evidence, brief=brief, source_text=source)
+        return True
+
+    def _check_evidence(self, run_id: str, evidence: list[dict]) -> list[dict]:
+        """Re-judge every claim against the source; the browser's word is not enough."""
+        source = self.store.get_source_text(run_id)
+        known = {e["id"]: e for e in self.store.get_run(run_id)["evidence"]}
+        checked = []
+        for item in evidence:
+            text = str(item.get("text", "")).strip()
+            if not text:
+                continue
+            snippet = str(item.get("snippet", "")).strip()
+            supported = bool(snippet) and in_source(snippet, source)
+            original = known.get(str(item.get("id", "")))
+            checked.append({
+                "id": str(item.get("id") or uuid.uuid4().hex[:8]),
+                "text": text,
+                "kind": item.get("kind") if item.get("kind") in ("fact", "metric", "quote", "opinion") else "fact",
+                "snippet": snippet if supported else "",
+                "supported": supported,
+                "approved": bool(item.get("approved")),
+                "edited": bool(original is None or original["text"] != text),
+                "added": original is None,
+            })
+        return checked
+
+    def save_review(self, run_id: str, brief: dict, evidence: list[dict], platforms: list[str]) -> dict:
+        run = self.store.get_run(run_id)
+        if run["status"] != "review":
+            raise ValueError("This loop is past the review stage")
+        specs = load_specs()
+        selected = [p for p in platforms if p in specs]
+        if not selected:
+            raise ValueError("Pick at least one platform")
+        evidence = self._check_evidence(run_id, evidence)
+        merged = {**run["brief"], **{k: v for k, v in brief.items() if k in LoopBrief.model_fields}}
+        merged["platforms"] = selected
+        brief_model = final_brief(merged, evidence)  # validates the fields
+        self.store.update_run(run_id, evidence=evidence, brief=brief_model.model_dump() | {"platforms": selected})
+        if selected != run["platforms"]:
+            self.store.set_platforms(run_id, selected)
+        return self.store.get_run(run_id)
+
+    def generate(self, run_id: str, brief: dict, evidence: list[dict], platforms: list[str]) -> dict:
+        """The person signed off the brief: write the posts from approved evidence only."""
+        run = self.save_review(run_id, brief, evidence, platforms)
+        self.store.update_run(run_id, status="writing", brief=final_brief(run["brief"], run["evidence"]).model_dump())
+        if not self.serverless:
+            self._spawn(self._write_all(run_id))
+        return self.store.get_run(run_id)
+
+    async def _write_all(self, run_id: str) -> None:
+        while claimed := self.store.claim_posts(run_id, limit=5):
+            await self._write_claimed(run_id, claimed)
+        await self._finish(run_id)
 
     async def run_to_completion(self, run_id: str) -> None:
         """Brief, then every post, then finish — in one go (local server, cron)."""
-        if not await self._brief_step(run_id):
-            return
-        while True:
-            claimed = self.store.claim_posts(run_id, limit=5)
-            if not claimed:
-                break
-            await self._write_claimed(run_id, claimed)
-        await self._finish(run_id)
+        if await self._brief_step(run_id):
+            await self._write_all(run_id)
 
     async def advance(self, run_id: str, max_posts: int = 3) -> dict:
         """Do the next short piece of work for a run (browser-driven mode)."""
@@ -136,6 +206,8 @@ class Service:
             raise ValueError("Run not found")
         if run["status"] == "briefing":
             await self._brief_step(run_id)
+        elif run["status"] == "analyzing":
+            await self._analyze_step(run_id)
         elif run["status"] in ("writing", "ready", "failed"):
             claimed = self.store.claim_posts(run_id, limit=max_posts)
             if claimed:
@@ -161,7 +233,7 @@ class Service:
         return True
 
     async def _write_claimed(self, run_id: str, platforms: list[str]) -> None:
-        brief = ContentBrief.model_validate(self.store.get_run(run_id)["brief"])
+        brief = LoopBrief.model_validate(self.store.get_run(run_id)["brief"])
         voice = self._run_voice(run_id)
         gate = asyncio.Semaphore(5)
         await asyncio.gather(*(self._write_one(run_id, brief, p, voice, gate) for p in platforms))
@@ -202,7 +274,7 @@ class Service:
         self.store.update_post(run_id, platform, status="queued", errors=[])
         if self.serverless:
             return
-        brief = ContentBrief.model_validate(run["brief"])
+        brief = LoopBrief.model_validate(run["brief"])
         self._spawn(self._write_one(run_id, brief, platform, self._voice(run["user_id"]), asyncio.Semaphore(1)))
 
     # --- review -----------------------------------------------------------
@@ -215,7 +287,9 @@ class Service:
             if key in changes:
                 data[key] = normalise_field(key, changes[key])
         post = PlatformPost.model_validate(data)
-        errors = check(post, load_specs()[platform])
+        brief = LoopBrief.model_validate(self.store.get_run(run_id)["brief"] or {"topic": "", "thesis": "",
+                                         "audience": "", "key_points": [], "hooks": [], "cta": ""})
+        errors = check(post, load_specs()[platform]) + prohibited_errors(post, brief)
         status = current["status"] if current["status"] in ("draft", "approved", "skipped") else "draft"
         if errors and status == "approved":
             status = "draft"
@@ -452,3 +526,4 @@ def normalise_field(key: str, value):
 def _short(error: Exception) -> str:
     text = str(error) or error.__class__.__name__
     return text if len(text) <= 300 else text[:297] + "…"
+

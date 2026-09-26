@@ -60,7 +60,13 @@ MIGRATIONS = (
     ("posts", "position", "INTEGER NOT NULL DEFAULT 0"),
     ("runs", "user_id", "TEXT"),
     ("topics", "user_id", "TEXT"),
+    ("runs", "meta", "TEXT"),
+    ("runs", "analysis", "TEXT"),
+    ("runs", "evidence", "TEXT"),
+    ("runs", "source_text", "TEXT"),
 )
+
+JSON_RUN_FIELDS = ("brief", "meta", "analysis", "evidence")
 
 # Post lifecycle: queued -> generating -> draft -> approved -> previewed | scheduled | published
 # with skipped and failed as side exits.
@@ -163,14 +169,15 @@ class Store:
 
     # --- runs -------------------------------------------------------------
     def create_run(self, source: str, platforms: list[str], origin: str = "manual",
-                   user_id: str | None = None) -> str:
+                   user_id: str | None = None, status: str = "briefing", meta: dict | None = None) -> str:
         run_id = uuid.uuid4().hex[:10]
         stamp = now()
         with self._conn() as db:
             db.execute(
-                "INSERT INTO runs (id, created_at, source, platforms, status, origin, user_id) "
-                "VALUES (?,?,?,?,?,?,?)",
-                (run_id, stamp, source, json.dumps(platforms), "briefing", origin, user_id),
+                "INSERT INTO runs (id, created_at, source, platforms, status, origin, user_id, meta) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (run_id, stamp, source, json.dumps(platforms), status, origin, user_id,
+                 json.dumps(meta or {})),
             )
             db.executemany(
                 "INSERT INTO posts (run_id, platform, status, updated_at, position) VALUES (?,?,?,?,?)",
@@ -179,11 +186,23 @@ class Store:
         return run_id
 
     def update_run(self, run_id: str, **fields) -> None:
-        if "brief" in fields and fields["brief"] is not None:
-            fields["brief"] = json.dumps(fields["brief"])
+        for key in JSON_RUN_FIELDS:
+            if fields.get(key) is not None:
+                fields[key] = json.dumps(fields[key])
         sets = ", ".join(f"{k} = ?" for k in fields)
         with self._conn() as db:
             db.execute(f"UPDATE runs SET {sets} WHERE id = ?", (*fields.values(), run_id))
+
+    def set_platforms(self, run_id: str, platforms: list[str]) -> None:
+        """Replace a run's platforms before any post is written (review stage)."""
+        stamp = now()
+        with self._conn() as db:
+            db.execute("UPDATE runs SET platforms = ? WHERE id = ?", (json.dumps(platforms), run_id))
+            db.execute("DELETE FROM posts WHERE run_id = ?", (run_id,))
+            db.executemany(
+                "INSERT INTO posts (run_id, platform, status, updated_at, position) VALUES (?,?,?,?,?)",
+                [(run_id, p, "queued", stamp, i) for i, p in enumerate(platforms)],
+            )
 
     def get_run(self, run_id: str) -> dict | None:
         with self._conn() as db:
@@ -231,6 +250,11 @@ class Store:
         return count
 
     # --- posts ------------------------------------------------------------
+    def get_source_text(self, run_id: str) -> str:
+        with self._conn() as db:
+            row = db.execute("SELECT source_text FROM runs WHERE id = ?", (run_id,)).fetchone()
+        return (row["source_text"] if row else None) or ""
+
     def update_post(self, run_id: str, platform: str, **fields) -> None:
         for key in ("data", "errors", "result"):
             if key in fields and fields[key] is not None and not isinstance(fields[key], str):
@@ -294,6 +318,31 @@ class Store:
                 (user_id,),
             ).fetchall()
         return [{**self._post_dict(r), "source": r["source"]} for r in rows]
+
+    def count_waiting(self, user_id: str) -> int:
+        """Posts written and waiting for approval, plus loops waiting for a brief review."""
+        with self._conn() as db:
+            posts = db.execute(
+                "SELECT COUNT(*) AS n FROM posts JOIN runs ON runs.id = posts.run_id "
+                "WHERE runs.user_id = ? AND posts.status = 'draft'", (user_id,)
+            ).fetchone()["n"]
+            briefs = db.execute(
+                "SELECT COUNT(*) AS n FROM runs WHERE user_id = ? AND status = 'review'", (user_id,)
+            ).fetchone()["n"]
+        return posts + briefs
+
+    def user_posts(self, user_id: str, limit_runs: int = 200) -> list[dict]:
+        """Every post in a user's recent loops, with enough of its loop to link and label it."""
+        with self._conn() as db:
+            rows = db.execute(
+                "SELECT posts.*, runs.source, runs.meta, runs.created_at AS run_created_at "
+                "FROM posts JOIN runs ON runs.id = posts.run_id "
+                "WHERE runs.id IN (SELECT id FROM runs WHERE user_id = ? ORDER BY created_at DESC LIMIT ?) "
+                "ORDER BY posts.updated_at DESC",
+                (user_id, limit_runs),
+            ).fetchall()
+        return [{**self._post_dict(r), "source": r["source"], "meta": json.loads(r["meta"]) if r["meta"] else {},
+                 "run_created_at": r["run_created_at"]} for r in rows]
 
     # --- settings ---------------------------------------------------------
     def get_setting(self, key: str, default=None):
@@ -406,6 +455,10 @@ class Store:
         run = dict(row)
         run["platforms"] = json.loads(run["platforms"])
         run["brief"] = json.loads(run["brief"]) if run["brief"] else None
+        run["meta"] = json.loads(run["meta"]) if run.get("meta") else {}
+        run["analysis"] = json.loads(run["analysis"]) if run.get("analysis") else None
+        run["evidence"] = json.loads(run["evidence"]) if run.get("evidence") else []
+        run.pop("source_text", None)  # large; read it with get_source_text
         if posts is not None:
             run["posts"] = posts
             tally = {}

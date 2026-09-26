@@ -1,0 +1,23 @@
+{% extends "app/base.html" %}
+{% block page_title %}Analytics{% endblock %}
+{% block main %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Analytics</p>
+    <h1 class="h-lg">What's working</h1>
+    <p>Output and rhythm today. Reach and engagement arrive once published-post metrics are connected.</p>
+  </div>
+</div>
+<div class="stats">
+  <div class="stat"><b>{{ o.week.written }}</b><span>Written this week</span></div>
+  <div class="stat"><b>{{ o.week.approved }}</b><span>Approved this week</span></div>
+  <div class="stat"><b>{{ o.week.published }}</b><span>Published this week</span></div>
+  <div class="stat"><b>{{ o.consistency.score }}%</b><span>14-day consistency</span></div>
+</div>
+<div class="panel empty soon">
+  <div class="soon-icon">{{ icon("chart", 30) }}</div>
+  <span class="chip-static">Coming soon</span>
+  <h2 class="h-sm" style="margin-top:16px">Performance learning</h2>
+  <p class="muted" style="max-width:58ch;margin:8px auto 0">Impressions, engagement and clicks per post, by platform, topic and style — and suggestions for your next loop based on what performed best. {% if not o.has_published %}Publish a few posts first; there's nothing to measure yet.{% endif %}</p>
+</div>
+{% endblock %}

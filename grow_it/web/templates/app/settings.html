@@ -1,0 +1,33 @@
+{% extends "app/base.html" %}
+{% block page_title %}Settings{% endblock %}
+{% block main %}
+<div class="page-head"><div><p class="eyebrow">Settings</p><h1 class="h-lg">Settings</h1></div></div>
+<div class="settings-grid">
+  <section class="panel" aria-labelledby="acctTitle">
+    <h2 class="panel-title" id="acctTitle">Account</h2>
+    <dl class="kv">
+      <dt>Name</dt><dd>{{ user.name or "—" }}</dd>
+      <dt>Email</dt><dd>{{ user.email or "—" }}</dd>
+      <dt>Signed in with</dt><dd>{{ {"oauth": "Google", "password": "Owner password", "local": "This computer"}.get(auth_mode, auth_mode) }}</dd>
+      <dt>Role</dt><dd>Owner{% if is_admin %} · site admin{% endif %}</dd>
+    </dl>
+    {% if user.id != "local" %}<a class="btn btn-quiet btn-sm" href="/logout">Sign out</a>{% endif %}
+  </section>
+  <section class="panel" aria-labelledby="wsTitle">
+    <h2 class="panel-title" id="wsTitle">Workspace</h2>
+    <dl class="kv"><dt>Name</dt><dd>{{ workspace_name }}</dd><dt>Type</dt><dd>Personal</dd></dl>
+    <p class="muted" style="font-size:13.5px">The workspace takes its name from your Brand Kit. Multiple workspaces, clients and members come with Team.</p>
+    <a class="btn btn-quiet btn-sm" href="/app/brand">Edit Brand Kit</a>
+  </section>
+  <section class="panel" aria-labelledby="autoTitle">
+    <h2 class="panel-title" id="autoTitle">Automation</h2>
+    <p class="muted" style="font-size:13.5px">Autopilot turns queued ideas into loops on a schedule, in review mode or publish mode.</p>
+    <a class="btn btn-quiet btn-sm" href="/app/autopilot">Autopilot settings</a>
+  </section>
+  <section class="panel" aria-labelledby="pubTitle">
+    <h2 class="panel-title" id="pubTitle">Publishing</h2>
+    <dl class="kv"><dt>Provider</dt><dd>{{ {"zernio": "Zernio", "ayrshare": "Ayrshare"}.get(provider, "Not set up — preview only") }}</dd><dt>Storage</dt><dd>{{ {"postgres": "Postgres", "sqlite": "SQLite", "memory": "In memory", "temporary": "Temporary"}.get(storage, storage) }}</dd></dl>
+    <a class="btn btn-quiet btn-sm" href="/app/integrations">Integrations</a>
+  </section>
+</div>
+{% endblock %}

@@ -1,11 +1,11 @@
 {% extends "app/base.html" %}
-{% block page_title %}Connections{% endblock %}
+{% block page_title %}Integrations{% endblock %}
 {% block main %}
 {% set is_owner = is_admin %}
 <div class="page-head">
   <div>
-    <p class="eyebrow">Connections</p>
-    <h1 class="h-lg">Your accounts</h1>
+    <p class="eyebrow">Integrations</p>
+    <h1 class="h-lg">Connected accounts</h1>
     <p>Connect each platform once through its own sign-in. Grow it never sees your passwords, and you can disconnect any time.</p>
   </div>
 </div>
@@ -97,6 +97,11 @@
   </div>
   <div class="modal-foot"><button class="btn btn-quiet btn-sm" type="button" data-close>Close</button></div>
 </dialog>
+<section class="panel soon-panel" aria-labelledby="srcTitle" style="margin-top:24px">
+  <h2 class="panel-title" id="srcTitle">Content sources</h2>
+  <p class="muted" style="margin:0 0 12px;font-size:14px">Import straight into a loop. Until these arrive, paste text, a link or upload a document on the Create page.</p>
+  <div class="chip-row">{% for name in ["Notion", "Google Docs", "RSS feeds", "WordPress", "Webflow"] %}<span class="chip chip-soon">{{ name }}<small>soon</small></span>{% endfor %}</div>
+</section>
 {% endblock %}
 
 {% block scripts %}

@@ -5,7 +5,7 @@ import hmac
 import logging
 import os
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
 
@@ -13,13 +13,14 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ValidationError
 
+from ..evidence import CONTENT_STYLES, INPUT_TYPES, OBJECTIVES
 from ..llm import GeminiLLM
 from ..models import PlatformPost
 from ..specs import load_specs
 from .. import zernio
-from . import auth
+from . import auth, insights
 from .service import LimitReached, Service, measure_post, normalise_field, provider_name
 from .store import Store, is_postgres_url
 
@@ -77,6 +78,12 @@ def safe_next(target: str | None) -> str:
     return target if target.startswith("/") and not target.startswith("//") else "/app"
 
 
+def _message(error: Exception) -> str:
+    if isinstance(error, ValidationError):
+        return "; ".join(f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in error.errors())
+    return str(error)
+
+
 def base_url(request: Request) -> str:
     """Public origin of this deployment, for OAuth redirect URLs."""
     configured = os.getenv("GROW_IT_BASE_URL", "").rstrip("/")
@@ -121,6 +128,12 @@ def create_app(store: Store | None = None, llm_factory=GeminiLLM, autopilot: boo
         context.setdefault("auth_provider", auth.provider())
         context.setdefault("is_admin", service.is_admin(context["user"]))
         context.setdefault("site_url", base_url(request))
+        user = context["user"]
+        if user and name.startswith("app/"):
+            voice = store.get_setting(f"voice:{user['id']}", {})
+            first = "" if user["id"] == auth.LOCAL_USER else (user.get("name") or "").split(" ")[0]
+            context.setdefault("workspace_name", voice.get("brand") or (f"{first}'s workspace" if first else "My workspace"))
+            context.setdefault("nav_counts", {"approvals": store.count_waiting(user["id"])})
         return templates.TemplateResponse(request, name, context)
 
     # --- who is signed in ---------------------------------------------------
@@ -295,25 +308,77 @@ def create_app(store: Store | None = None, llm_factory=GeminiLLM, autopilot: boo
 
     # --- console ------------------------------------------------------------
     @app.get("/app", response_class=HTMLResponse)
-    def dashboard(request: Request):
+    async def home_page(request: Request):
+        user = request.state.user
+        runs = store.list_runs(user["id"])
+        posts = store.user_posts(user["id"])
+        accounts = None
+        if provider_name() == "zernio" and runs:
+            try:
+                info = await asyncio.to_thread(service.connections, user)
+                accounts = len(info["accounts"]) if not info.get("accounts_error") else None
+            except Exception:
+                accounts = None
+        data = insights.overview(runs, posts, accounts=accounts, provider=provider_name())
+        return page(request, "app/home.html", tab="home", o=data, run_title=insights.run_title,
+                    autopilot=service.autopilot_settings(user["id"]))
+
+    @app.get("/app/library", response_class=HTMLResponse)
+    def library_page(request: Request):
         runs = store.list_runs(uid(request))
-        totals: dict[str, int] = {}
-        for run in runs:
-            for status, n in run["counts"].items():
-                totals[status] = totals.get(status, 0) + n
-        return page(
-            request, "app/dashboard.html", tab="dashboard", runs=runs, totals=totals,
-            autopilot=service.autopilot_settings(uid(request)),
-        )
+        return page(request, "app/library.html", tab="library", runs=runs, run_title=insights.run_title,
+                    input_types=INPUT_TYPES)
+
+    @app.get("/app/approvals", response_class=HTMLResponse)
+    def approvals_page(request: Request):
+        runs = store.list_runs(uid(request))
+        posts = store.user_posts(uid(request))
+        data = insights.overview(runs, posts, accounts=None, provider=provider_name())
+        return page(request, "app/approvals.html", tab="approvals", o=data, run_title=insights.run_title)
+
+    @app.get("/app/analytics", response_class=HTMLResponse)
+    def analytics_page(request: Request):
+        posts = store.user_posts(uid(request))
+        data = insights.overview(store.list_runs(uid(request)), posts, accounts=None, provider=provider_name())
+        return page(request, "app/analytics.html", tab="analytics", o=data)
+
+    @app.get("/app/assets", response_class=HTMLResponse)
+    def assets_page(request: Request):
+        return page(request, "app/soon.html", tab="assets", area="Assets")
+
+    @app.get("/app/team", response_class=HTMLResponse)
+    def team_page(request: Request):
+        return page(request, "app/soon.html", tab="team", area="Team")
+
+    @app.get("/app/settings", response_class=HTMLResponse)
+    def settings_page(request: Request):
+        return page(request, "app/settings.html", tab="settings")
+
+    @app.get("/api/notifications")
+    def api_notifications(request: Request):
+        return insights.notifications(store.list_runs(uid(request)), store.user_posts(uid(request)),
+                                      datetime.now(timezone.utc))
 
     @app.get("/app/new", response_class=HTMLResponse)
-    def new_run(request: Request, source: str = ""):
-        return page(request, "app/new.html", tab="new", source=source,
-                    voice=store.get_setting(f"voice:{uid(request)}", {}))
+    def new_run(request: Request, source: str = "", reuse: str = ""):
+        runs = store.list_runs(uid(request))
+        return page(request, "app/new.html", tab="create", source=source, reuse=reuse,
+                    voice=store.get_setting(f"voice:{uid(request)}", {}),
+                    past=[{"id": r["id"], "title": insights.run_title(r)} for r in runs if r["source"]][:30],
+                    objectives=OBJECTIVES, styles=CONTENT_STYLES, input_types=INPUT_TYPES)
+
+    @app.get("/api/runs/{run_id}/source")
+    def api_run_source(request: Request, run_id: str):
+        run = own_run(request, run_id)
+        return {"source": run["source"], "meta": run["meta"], "text": store.get_source_text(run_id)}
 
     @app.get("/app/runs/{run_id}", response_class=HTMLResponse)
     def run_page(request: Request, run_id: str):
-        return page(request, "app/run.html", tab="dashboard", run=own_run(request, run_id))
+        run = own_run(request, run_id)
+        if run["status"] in ("analyzing", "review"):
+            return page(request, "app/review.html", tab="library", run=run, title=insights.run_title(run),
+                        styles=CONTENT_STYLES, objectives=OBJECTIVES, input_types=INPUT_TYPES)
+        return page(request, "app/run.html", tab="library", run=run, title=insights.run_title(run))
 
     @app.get("/app/runs/{run_id}/report", response_class=HTMLResponse)
     def report_page(request: Request, run_id: str):
@@ -323,7 +388,7 @@ def create_app(store: Store | None = None, llm_factory=GeminiLLM, autopilot: boo
             if post["data"]:
                 post["measure"] = measure_post(PlatformPost.model_validate(post["data"]))
             post["label"] = specs[post["platform"]].label
-        return page(request, "app/report.html", tab="dashboard", run=run)
+        return page(request, "app/report.html", tab="library", run=run)
 
     @app.get("/app/calendar", response_class=HTMLResponse)
     def calendar(request: Request):
@@ -337,6 +402,7 @@ def create_app(store: Store | None = None, llm_factory=GeminiLLM, autopilot: boo
             topics=store.list_topics(uid(request)), next_slot=service.next_slot(settings),
         )
 
+    @app.get("/app/integrations", response_class=HTMLResponse)
     @app.get("/app/connections", response_class=HTMLResponse)
     async def connections_page(request: Request, connected: str = "", error: str = "",
                                username: str = "", platform: str = ""):
@@ -351,7 +417,7 @@ def create_app(store: Store | None = None, llm_factory=GeminiLLM, autopilot: boo
             flash = ("ok", f"{label} connected{f' as {username}' if username else ''}.")
         elif error:
             flash = ("error", f"Connecting {platform or 'that account'} didn't finish: {error.replace('_', ' ')}")
-        return page(request, "app/connections.html", tab="connections", info=info,
+        return page(request, "app/connections.html", tab="integrations", info=info,
                     by_platform=by_platform, flash=flash, oauth_platforms=CONNECT_PLATFORMS_OAUTH)
 
     @app.get("/app/connect/{platform}")
@@ -371,14 +437,41 @@ def create_app(store: Store | None = None, llm_factory=GeminiLLM, autopilot: boo
             )
         return RedirectResponse(url, status_code=303)
 
+    @app.get("/app/brand", response_class=HTMLResponse)
     @app.get("/app/voice", response_class=HTMLResponse)
     def voice_page(request: Request):
-        return page(request, "app/voice.html", tab="voice", voice=store.get_setting(f"voice:{uid(request)}", {}))
+        return page(request, "app/voice.html", tab="brand", voice=store.get_setting(f"voice:{uid(request)}", {}))
 
     # --- API ----------------------------------------------------------------
+    class SourceMeta(BaseModel):
+        title: str = Field("", max_length=200)
+        input_type: str = Field("idea", max_length=20)
+        url: str = Field("", max_length=2000)
+        author: str = Field("", max_length=200)
+        source_date: str = Field("", max_length=40)
+        campaign: str = Field("", max_length=200)
+        objective: str = Field("", max_length=100)
+        audience: str = Field("", max_length=300)
+        cta: str = Field("", max_length=300)
+        style: str = Field("", max_length=60)
+
     class RunIn(BaseModel):
-        source: str
+        source: str = Field(max_length=200_000)
         platforms: list[str] | None = None
+        review: bool = False
+        meta: SourceMeta | None = None
+
+    class ClaimIn(BaseModel):
+        id: str = ""
+        text: str = Field(max_length=1000)
+        kind: str = "fact"
+        snippet: str = Field("", max_length=2000)
+        approved: bool = False
+
+    class ReviewIn(BaseModel):
+        brief: dict
+        evidence: list[ClaimIn] = []
+        platforms: list[str]
 
     class PostEdit(BaseModel):
         title: str | None = None
@@ -403,9 +496,14 @@ def create_app(store: Store | None = None, llm_factory=GeminiLLM, autopilot: boo
         post: PostEdit
 
     class VoiceIn(BaseModel):
-        brand: str = ""
-        audience: str = ""
-        notes: str = ""
+        brand: str = Field("", max_length=200)
+        audience: str = Field("", max_length=500)
+        tone: str = Field("", max_length=300)
+        avoid: str = Field("", max_length=1000)
+        always: str = Field("", max_length=1000)
+        default_cta: str = Field("", max_length=300)
+        hashtags: str = Field("", max_length=500)
+        notes: str = Field("", max_length=4000)
 
     class TopicIn(BaseModel):
         source: str
@@ -414,9 +512,10 @@ def create_app(store: Store | None = None, llm_factory=GeminiLLM, autopilot: boo
         handle: str
         app_password: str
 
-    def start(request: Request, source: str, platforms: list[str] | None, origin: str = "manual") -> str:
+    def start(request: Request, source: str, platforms: list[str] | None, origin: str = "manual",
+              meta: dict | None = None, review: bool = False) -> str:
         try:
-            return service.start_run(uid(request), source, platforms, origin=origin)
+            return service.start_run(uid(request), source, platforms, origin=origin, meta=meta, review=review)
         except LimitReached as e:
             raise HTTPException(429, str(e))
 
@@ -428,8 +527,25 @@ def create_app(store: Store | None = None, llm_factory=GeminiLLM, autopilot: boo
     async def api_create_run(request: Request, body: RunIn):
         if not body.source.strip():
             raise HTTPException(422, "Give the loop a topic, a draft or a link")
-        run_id = start(request, body.source, body.platforms)
+        meta = body.meta.model_dump() if body.meta else {}
+        run_id = start(request, body.source, body.platforms, meta=meta, review=body.review)
         return {"id": run_id, "url": f"/app/runs/{run_id}"}
+
+    @app.put("/api/runs/{run_id}/review")
+    def api_save_review(request: Request, run_id: str, body: ReviewIn):
+        own_run(request, run_id)
+        try:
+            return service.save_review(run_id, body.brief, [c.model_dump() for c in body.evidence], body.platforms)
+        except (ValueError, ValidationError) as e:
+            raise HTTPException(400, _message(e))
+
+    @app.post("/api/runs/{run_id}/generate")
+    async def api_generate(request: Request, run_id: str, body: ReviewIn):
+        own_run(request, run_id)
+        try:
+            return service.generate(run_id, body.brief, [c.model_dump() for c in body.evidence], body.platforms)
+        except (ValueError, ValidationError) as e:
+            raise HTTPException(400, _message(e))
 
     @app.post("/start")
     async def form_start(request: Request):
@@ -439,7 +555,8 @@ def create_app(store: Store | None = None, llm_factory=GeminiLLM, autopilot: boo
             return RedirectResponse("/app/new", status_code=303)
         platforms = form.getlist("platforms") or None
         try:
-            run_id = start(request, source, [str(p) for p in platforms] if platforms else None)
+            run_id = start(request, source, [str(p) for p in platforms] if platforms else None,
+                           meta={"input_type": "idea"}, review=True)
         except HTTPException:
             return RedirectResponse(f"/app/new?source={quote(source)}", status_code=303)
         return RedirectResponse(f"/app/runs/{run_id}", status_code=303)
@@ -565,9 +682,10 @@ def create_app(store: Store | None = None, llm_factory=GeminiLLM, autopilot: boo
     @app.put("/api/voice")
     def api_voice(request: Request, body: VoiceIn):
         voice = body.model_dump()
-        lines = [f"Brand: {voice['brand']}" if voice["brand"] else "",
-                 f"Audience: {voice['audience']}" if voice["audience"] else "",
-                 voice["notes"]]
+        labels = [("brand", "Brand"), ("audience", "Audience"), ("tone", "Tone"),
+                  ("always", "Words and phrases we use"), ("avoid", "Never use"),
+                  ("default_cta", "Default call to action"), ("hashtags", "Brand hashtags")]
+        lines = [f"{label}: {voice[key]}" for key, label in labels if voice[key].strip()] + [voice["notes"]]
         voice["compiled"] = "\n".join(line for line in lines if line.strip())
         store.set_setting(f"voice:{uid(request)}", voice)
         return voice
